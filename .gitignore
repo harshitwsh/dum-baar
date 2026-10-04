@@ -1,0 +1,10 @@
+.DS_Store
+Thumbs.db
+*.log
+node_modules/
+dist/*.map
+original_app.js
+build_full_app.py
+update_engine.py
+test_flavours.py
+EOF
