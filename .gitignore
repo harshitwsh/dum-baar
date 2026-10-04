@@ -8,3 +8,4 @@ build_full_app.py
 update_engine.py
 test_flavours.py
 EOF
+.vercel
