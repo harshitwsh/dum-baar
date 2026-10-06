@@ -208,189 +208,51 @@ class HookahAudio {
     osc.stop(now + 0.45);
   }
 
-  speakReactionPhrase(phrase) {
-    if (!('speechSynthesis' in window)) return;
+  // Play realistic recorded audio reaction bites (or user's custom recording)
+  playReactionSound(type = 'default') {
+    const lower = String(type).toLowerCase();
+    let key = 'pass';
+    let defaultFile = 'web/audio/bhai_pass_kar.mp3';
+
+    if (lower.includes('pass')) {
+      key = 'pass';
+      defaultFile = 'web/audio/bhai_pass_kar.mp3';
+    } else if (lower.includes('dum') || lower.includes('flame')) {
+      key = 'dum';
+      defaultFile = 'web/audio/kya_dum_maara.mp3';
+    } else if (lower.includes('ring') || lower.includes('chhalla')) {
+      key = 'ring';
+      defaultFile = 'web/audio/chhalla_bana.mp3';
+    } else if (lower.includes('wah') || lower.includes('clap')) {
+      key = 'wah';
+      defaultFile = 'web/audio/wah_wah.mp3';
+    } else if (lower.includes('cheer')) {
+      key = 'cheer';
+      defaultFile = 'web/audio/cheers.mp3';
+    }
+
+    const customAudio = localStorage.getItem(`dumbaar.custom_voice.${key}`);
+    const src = customAudio || defaultFile;
+
     try {
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.resume();
-
-      // Clean phrase: remove emojis and all punctuation so it NEVER speaks "exclamation mark"
-      const cleanPhrase = String(phrase)
-        .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '')
-        .replace(/[!?,.:;()\-—_"'`~]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-
-      if (!cleanPhrase) return;
-
-      const utt = new SpeechSynthesisUtterance(cleanPhrase);
-      utt.rate = 1.0;
-      utt.pitch = 1.05;
-      utt.volume = 1.0;
-
-      const voices = window.speechSynthesis.getVoices() || [];
-      const indianVoice = voices.find(v => 
-        /hi[-_]IN/i.test(v.lang) || 
-        /en[-_]IN/i.test(v.lang) || 
-        /Rishi/i.test(v.name) || 
-        /Lekha/i.test(v.name) || 
-        /Veena/i.test(v.name) ||
-        /Indian/i.test(v.name)
-      );
-
-      if (indianVoice) {
-        utt.voice = indianVoice;
-        utt.lang = indianVoice.lang;
-      } else {
-        utt.lang = 'en-IN';
-      }
-
-      window.speechSynthesis.speak(utt);
+      const audio = new Audio(src);
+      audio.volume = 1.0;
+      audio.play().catch(err => {
+        console.warn("Reaction audio play error:", err);
+      });
     } catch (e) {
-      console.warn("speechSynthesis error:", e);
+      console.warn("Could not play reaction audio:", e);
     }
   }
 
-  // Play realistic acoustic reaction sound bites + vocal calls
-  async playReactionSound(type = 'default') {
-    if (!this.ctx) {
-      this.init();
-    }
-    if (!this.ctx) return;
-
-    if (this.ctx.state === 'suspended') {
-      try {
-        await this.ctx.resume();
-      } catch (err) {
-        console.warn("AudioContext resume failed:", err);
-      }
-    }
-
-    if (this.isMuted) {
-      this.isMuted = false;
-      if (this.masterGain) {
-        this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
-      }
-    }
-
-    const now = this.ctx.currentTime;
-    const dest = this.ctx.destination;
-    const lower = String(type).toLowerCase();
-
-    if (lower.includes('pass')) {
-      this.speakReactionPhrase("Bhai pass kar");
-      // Ascending call horn / chime
-      const notes = [440, 554.37, 659.25];
-      notes.forEach((freq, idx) => {
-        const t = now + idx * 0.1;
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(freq, t);
-        g.gain.setValueAtTime(0.01, t);
-        g.gain.linearRampToValueAtTime(0.6, t + 0.02);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
-        osc.connect(g);
-        g.connect(dest);
-        osc.start(t);
-        osc.stop(t + 0.35);
-      });
-
-    } else if (lower.includes('dum') || lower.includes('flame')) {
-      this.speakReactionPhrase("Kya dum maara");
-      // Warm resonant power chord & triumphant swoosh: "Kya dum maara!"
-      const freqs = [220, 330, 440];
-      freqs.forEach((freq, i) => {
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = i === 0 ? 'sawtooth' : 'triangle';
-        osc.frequency.setValueAtTime(freq, now);
-        osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.25);
-        g.gain.setValueAtTime(0.01, now);
-        g.gain.linearRampToValueAtTime(0.5 / (i + 1), now + 0.03);
-        g.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
-
-        const filter = this.ctx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.frequency.setValueAtTime(1400, now);
-
-        osc.connect(filter);
-        filter.connect(g);
-        g.connect(dest);
-        osc.start(now);
-        osc.stop(now + 0.55);
-      });
-
-    } else if (lower.includes('ring') || lower.includes('chhalla')) {
-      this.speakReactionPhrase("Chhalla bana");
-      // Crystalline bell chime
-      this.playRingChime();
-      const osc = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(880, now);
-      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
-      g.gain.setValueAtTime(0.01, now);
-      g.gain.linearRampToValueAtTime(0.6, now + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-      osc.connect(g);
-      g.connect(dest);
-      osc.start(now);
-      osc.stop(now + 0.5);
-
-    } else if (lower.includes('wah') || lower.includes('clap')) {
-      this.speakReactionPhrase("Wah wah");
-      // Double acoustic clap / table tap
-      for (let i = 0; i < 2; i++) {
-        const t = now + i * 0.13;
-        const osc = this.ctx.createOscillator();
-        const g = this.ctx.createGain();
-        osc.type = 'triangle';
-        osc.frequency.setValueAtTime(360, t);
-        osc.frequency.exponentialRampToValueAtTime(120, t + 0.07);
-        g.gain.setValueAtTime(0.65, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-        osc.connect(g);
-        g.connect(dest);
-        osc.start(t);
-        osc.stop(t + 0.08);
-      }
-
-    } else if (lower.includes('cheer')) {
-      this.speakReactionPhrase("Cheers");
-      // Crystal toast glass clink: C7 (2093Hz) + high shimmer
-      const osc1 = this.ctx.createOscillator();
-      const osc2 = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      osc1.type = 'sine';
-      osc2.type = 'sine';
-      osc1.frequency.setValueAtTime(2093, now);
-      osc2.frequency.setValueAtTime(3135, now);
-      g.gain.setValueAtTime(0.01, now);
-      g.gain.linearRampToValueAtTime(0.65, now + 0.008);
-      g.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
-      osc1.connect(g);
-      osc2.connect(g);
-      g.connect(dest);
-      osc1.start(now);
-      osc2.start(now);
-      osc1.stop(now + 0.75);
-      osc2.stop(now + 0.75);
-
-    } else {
-      // Default notification chime
-      const osc = this.ctx.createOscillator();
-      const g = this.ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(523.25, now);
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.14);
-      g.gain.setValueAtTime(0.01, now);
-      g.gain.linearRampToValueAtTime(0.5, now + 0.02);
-      g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
-      osc.connect(g);
-      g.connect(dest);
-      osc.start(now);
-      osc.stop(now + 0.4);
+  playAudioData(base64OrBlobUrl) {
+    if (!base64OrBlobUrl) return;
+    try {
+      const audio = new Audio(base64OrBlobUrl);
+      audio.volume = 1.0;
+      audio.play().catch(e => console.warn("playAudioData error:", e));
+    } catch (err) {
+      console.warn("playAudioData error:", err);
     }
   }
 }

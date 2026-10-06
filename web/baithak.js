@@ -171,6 +171,7 @@ class BaithakManager {
           <button type="button" class="react-btn" data-reaction="💨 Chhalla Bana!">💨 Ring!</button>
           <button type="button" class="react-btn" data-reaction="👏 Wah Wah!">👏 Wah!</button>
           <button type="button" class="react-btn" data-reaction="🍹 Cheers!">🍹 Cheers!</button>
+          <button type="button" id="btn-open-voice-studio" class="react-btn voice-studio-btn" title="Record your own voice for reactions">🎙️ Custom Voice</button>
         </div>
 
         <!-- Media Toggles -->
@@ -182,35 +183,83 @@ class BaithakManager {
     `;
     document.body.appendChild(videoDock);
 
-    // 2b. Center Screen Active Smoker Spotlight Stage
-    const centerStage = document.createElement('div');
-    centerStage.id = 'baithak-center-stage';
-    centerStage.className = 'baithak-center-stage is-hidden';
-    centerStage.setAttribute('hidden', '');
-    centerStage.innerHTML = `
-      <div class="smoker-spotlight-card">
-        <div class="smoker-spotlight-header">
-          <span class="spotlight-pulse"></span>
-          <span id="smoker-stage-title" class="spotlight-title">Baithak Spotlight</span>
-          <span id="smoker-stage-badge" class="spotlight-badge">💨 In Session</span>
+    // 2b. Voice Studio Dialog
+    const voiceDialog = document.createElement('dialog');
+    voiceDialog.id = 'voice-studio-dialog';
+    voiceDialog.className = 'flavour-dialog voice-studio-dialog';
+    voiceDialog.innerHTML = `
+      <section class="flavour-card voice-studio-card">
+        <div class="flavour-menu-top">
+          <span class="flavour-eyebrow">Baithak Studio / Real Voice</span>
+          <button id="voice-studio-close" class="flavour-close" type="button" aria-label="Close Voice Studio">×</button>
         </div>
-        <div class="smoker-video-box">
-          <video id="smoker-stage-video" autoplay playsinline muted></video>
-          <div id="smoker-stage-fallback" class="smoker-stage-fallback" style="display:none;">
-            <span class="fallback-avatar">💨</span>
-            <span id="smoker-fallback-name" class="fallback-name">Friend</span>
+        <h2 id="voice-studio-title">Record your <em>own voice.</em></h2>
+        <p class="flavour-description">Record yourself shouting these phrases. When you click reaction buttons, your friends in the stream will hear your real voice!</p>
+
+        <div class="voice-phrases-list">
+          <div class="voice-phrase-item" data-key="pass">
+            <div class="phrase-meta">
+              <span class="phrase-name">🗣️ "Bhai Pass Kar!"</span>
+              <span class="phrase-status" id="voice-status-pass">Default Voice</span>
+            </div>
+            <div class="phrase-actions">
+              <button type="button" class="btn-voice-rec" data-key="pass">🔴 Record</button>
+              <button type="button" class="btn-voice-play" data-key="pass">▶️ Play</button>
+              <button type="button" class="btn-voice-reset" data-key="pass">↺ Reset</button>
+            </div>
           </div>
-          <div class="smoker-video-overlay">
-            <span id="smoker-stage-name" class="smoker-current-name">Waiting...</span>
-            <span id="smoker-stage-status" class="smoker-current-status">Holding Pipe</span>
+
+          <div class="voice-phrase-item" data-key="dum">
+            <div class="phrase-meta">
+              <span class="phrase-name">🔥 "Kya Dum Maara!"</span>
+              <span class="phrase-status" id="voice-status-dum">Default Voice</span>
+            </div>
+            <div class="phrase-actions">
+              <button type="button" class="btn-voice-rec" data-key="dum">🔴 Record</button>
+              <button type="button" class="btn-voice-play" data-key="dum">▶️ Play</button>
+              <button type="button" class="btn-voice-reset" data-key="dum">↺ Reset</button>
+            </div>
+          </div>
+
+          <div class="voice-phrase-item" data-key="ring">
+            <div class="phrase-meta">
+              <span class="phrase-name">💨 "Chhalla Bana!"</span>
+              <span class="phrase-status" id="voice-status-ring">Default Voice</span>
+            </div>
+            <div class="phrase-actions">
+              <button type="button" class="btn-voice-rec" data-key="ring">🔴 Record</button>
+              <button type="button" class="btn-voice-play" data-key="ring">▶️ Play</button>
+              <button type="button" class="btn-voice-reset" data-key="ring">↺ Reset</button>
+            </div>
+          </div>
+
+          <div class="voice-phrase-item" data-key="wah">
+            <div class="phrase-meta">
+              <span class="phrase-name">👏 "Wah Wah!"</span>
+              <span class="phrase-status" id="voice-status-wah">Default Voice</span>
+            </div>
+            <div class="phrase-actions">
+              <button type="button" class="btn-voice-rec" data-key="wah">🔴 Record</button>
+              <button type="button" class="btn-voice-play" data-key="wah">▶️ Play</button>
+              <button type="button" class="btn-voice-reset" data-key="wah">↺ Reset</button>
+            </div>
+          </div>
+
+          <div class="voice-phrase-item" data-key="cheer">
+            <div class="phrase-meta">
+              <span class="phrase-name">🍹 "Cheers!"</span>
+              <span class="phrase-status" id="voice-status-cheer">Default Voice</span>
+            </div>
+            <div class="phrase-actions">
+              <button type="button" class="btn-voice-rec" data-key="cheer">🔴 Record</button>
+              <button type="button" class="btn-voice-play" data-key="cheer">▶️ Play</button>
+              <button type="button" class="btn-voice-reset" data-key="cheer">↺ Reset</button>
+            </div>
           </div>
         </div>
-        <div id="smoker-stage-actions" class="smoker-stage-actions">
-          <!-- Member pass buttons or 'Bhai Pass Kar!' button -->
-        </div>
-      </div>
+      </section>
     `;
-    document.body.appendChild(centerStage);
+    document.body.appendChild(voiceDialog);
 
     // 3. Floating Reactions Layer
     const reactionsLayer = document.createElement('div');
@@ -369,6 +418,97 @@ class BaithakManager {
       });
       topActions.insertBefore(baithakBtn, topActions.firstChild);
     }
+
+    this._attachVoiceStudioListeners();
+  }
+
+  _attachVoiceStudioListeners() {
+    const dialog = document.getElementById('voice-studio-dialog');
+    const openBtn = document.getElementById('btn-open-voice-studio');
+    const closeBtn = document.getElementById('voice-studio-close');
+
+    openBtn?.addEventListener('click', () => {
+      this._updateVoiceStudioStatus();
+      dialog?.showModal();
+    });
+
+    closeBtn?.addEventListener('click', () => {
+      dialog?.close();
+    });
+
+    let currentMediaRecorder = null;
+    let recordingChunks = [];
+    let activeKey = null;
+
+    document.querySelectorAll('.btn-voice-rec').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const key = btn.dataset.key;
+        if (currentMediaRecorder && currentMediaRecorder.state === 'recording') {
+          currentMediaRecorder.stop();
+          return;
+        }
+
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          recordingChunks = [];
+          activeKey = key;
+          currentMediaRecorder = new MediaRecorder(stream);
+
+          currentMediaRecorder.ondataavailable = (e) => {
+            if (e.data.size > 0) recordingChunks.push(e.data);
+          };
+
+          currentMediaRecorder.onstop = () => {
+            const blob = new Blob(recordingChunks, { type: 'audio/webm' });
+            const reader = new FileReader();
+            reader.onloadend = () => {
+              const base64Audio = reader.result;
+              localStorage.setItem(`dumbaar.custom_voice.${activeKey}`, base64Audio);
+              btn.textContent = '🔴 Record';
+              btn.classList.remove('is-recording');
+              this._updateVoiceStudioStatus();
+              this.showToast(`🎙️ Custom voice saved for ${activeKey}!`);
+            };
+            reader.readAsDataURL(blob);
+          };
+
+          currentMediaRecorder.start();
+          btn.textContent = '⏹️ Stop';
+          btn.classList.add('is-recording');
+        } catch (err) {
+          alert("Microphone permission needed to record voice: " + err.message);
+        }
+      });
+    });
+
+    document.querySelectorAll('.btn-voice-play').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        if (window.hookahAudio) {
+          window.hookahAudio.playReactionSound(key);
+        }
+      });
+    });
+
+    document.querySelectorAll('.btn-voice-reset').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const key = btn.dataset.key;
+        localStorage.removeItem(`dumbaar.custom_voice.${key}`);
+        this._updateVoiceStudioStatus();
+        this.showToast(`↺ Reset ${key} voice to default.`);
+      });
+    });
+  }
+
+  _updateVoiceStudioStatus() {
+    ['pass', 'dum', 'ring', 'wah', 'cheer'].forEach(key => {
+      const statusEl = document.getElementById(`voice-status-${key}`);
+      const hasCustom = !!localStorage.getItem(`dumbaar.custom_voice.${key}`);
+      if (statusEl) {
+        statusEl.textContent = hasCustom ? '✨ Real Voice Active' : 'Studio Voice (Default)';
+        statusEl.className = hasCustom ? 'phrase-status custom' : 'phrase-status';
+      }
+    });
   }
 
   openModal(prefillRoom = null) {
@@ -698,16 +838,23 @@ class BaithakManager {
 
       case 'REQUEST_PIPE':
         this.showToast(`🗣️ ${data.fromName}: Bhai Pass Kar!`);
-        try { window.hookahAudio?.playReactionSound('🗣️ Bhai Pass Kar!'); } catch (_) {}
+        if (data.customAudio && window.hookahAudio) {
+          window.hookahAudio.playAudioData(data.customAudio);
+        } else if (window.hookahAudio) {
+          window.hookahAudio.playReactionSound('🗣️ Bhai Pass Kar!');
+        }
         this._showFloatingReaction('🗣️ Bhai Pass Kar!', data.fromName);
         if (this.amIHolder()) {
           this._updateTurnBanner();
-          this._renderCenterStage();
         }
         break;
 
       case 'REACTION':
-        try { window.hookahAudio?.playReactionSound(data.text); } catch (_) {}
+        if (data.customAudio && window.hookahAudio) {
+          window.hookahAudio.playAudioData(data.customAudio);
+        } else if (window.hookahAudio) {
+          window.hookahAudio.playReactionSound(data.text);
+        }
         this._showFloatingReaction(data.text, data.fromName);
         break;
 
@@ -803,17 +950,29 @@ class BaithakManager {
     this._broadcast({ type: 'RING' });
   }
 
+  _getReactionKey(text) {
+    const lower = String(text).toLowerCase();
+    if (lower.includes('pass')) return 'pass';
+    if (lower.includes('dum') || lower.includes('flame')) return 'dum';
+    if (lower.includes('ring') || lower.includes('chhalla')) return 'ring';
+    if (lower.includes('wah') || lower.includes('clap')) return 'wah';
+    if (lower.includes('cheer')) return 'cheer';
+    return 'pass';
+  }
+
   sendReaction(text) {
     if (window.hookahAudio) {
-      window.hookahAudio.init();
       window.hookahAudio.playReactionSound(text);
     }
     this._showFloatingReaction(text, this.myName);
     if (this.isInRoom) {
+      const key = this._getReactionKey(text);
+      const customAudio = localStorage.getItem(`dumbaar.custom_voice.${key}`);
       this._broadcast({
         type: 'REACTION',
         text,
-        fromName: this.myName
+        fromName: this.myName,
+        customAudio: customAudio || null
       });
     }
   }
@@ -833,9 +992,11 @@ class BaithakManager {
     if (this.amIHolder()) return;
     this.sendReaction('🗣️ Bhai Pass Kar!');
     this.showToast("🗣️ Bhai Pass Kar! Sent request to get the pipe back.");
+    const customVoice = localStorage.getItem('dumbaar.custom_voice.pass');
     this._broadcast({
       type: 'REQUEST_PIPE',
-      fromName: this.myName
+      fromName: this.myName,
+      customAudio: customVoice || null
     });
   }
 
