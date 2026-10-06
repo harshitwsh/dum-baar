@@ -208,7 +208,32 @@ class HookahAudio {
     osc.stop(now + 0.45);
   }
 
-  // Play realistic acoustic reaction sound bites
+  speakReactionPhrase(phrase) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+      window.speechSynthesis.resume();
+
+      const utt = new SpeechSynthesisUtterance(phrase);
+      utt.rate = 1.02;
+      utt.pitch = 1.06;
+      utt.volume = 1.0;
+
+      const voices = window.speechSynthesis.getVoices() || [];
+      const indianVoice = voices.find(v => /hi[-_]IN/i.test(v.lang) || /en[-_]IN/i.test(v.lang) || /India/i.test(v.name));
+      if (indianVoice) {
+        utt.voice = indianVoice;
+        utt.lang = indianVoice.lang;
+      } else {
+        utt.lang = 'hi-IN';
+      }
+      window.speechSynthesis.speak(utt);
+    } catch (e) {
+      console.warn("speechSynthesis error:", e);
+    }
+  }
+
+  // Play realistic acoustic reaction sound bites + vocal calls
   async playReactionSound(type = 'default') {
     if (!this.ctx) {
       this.init();
@@ -235,16 +260,17 @@ class HookahAudio {
     const lower = String(type).toLowerCase();
 
     if (lower.includes('pass')) {
-      // Ascending cheerful 3-note melodic arpeggio: G4 -> C5 -> E5 ("Bhai pass kar!")
-      const notes = [392.00, 523.25, 659.25];
+      this.speakReactionPhrase("भाई पास कर!");
+      // Ascending call horn / chime
+      const notes = [440, 554.37, 659.25];
       notes.forEach((freq, idx) => {
-        const t = now + idx * 0.11;
+        const t = now + idx * 0.1;
         const osc = this.ctx.createOscillator();
         const g = this.ctx.createGain();
         osc.type = 'triangle';
         osc.frequency.setValueAtTime(freq, t);
         g.gain.setValueAtTime(0.01, t);
-        g.gain.linearRampToValueAtTime(0.55, t + 0.02);
+        g.gain.linearRampToValueAtTime(0.6, t + 0.02);
         g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
         osc.connect(g);
         g.connect(dest);

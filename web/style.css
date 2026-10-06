@@ -567,9 +567,12 @@ html, body {
 /* --------------------------------------------------------------- docks */
 .flavour-dock {
   position: fixed;
-  right: 24px;
-  bottom: calc(32px + var(--footer-height, 50px) + var(--safe-bottom));
-  z-index: 4;
+  left: 24px;
+  top: calc(178px + var(--safe-top));
+  right: auto;
+  bottom: auto;
+  z-index: 10;
+  max-width: calc(100vw - 28px);
 }
 .flavour-dock[hidden] { display: none; }
 .flavour-open {
@@ -646,8 +649,10 @@ html, body {
 }
 .flavour-toast {
   position: absolute;
-  right: 0;
-  bottom: calc(100% + 12px);
+  left: 0;
+  right: auto;
+  top: calc(100% + 12px);
+  bottom: auto;
   width: max-content;
   max-width: min(340px, calc(100vw - 32px));
   margin: 0;
@@ -1097,10 +1102,24 @@ html, body {
     text-align: center;
     margin-bottom: 2px;
   }
-  .flavour-dock {
-    right: 14px;
-    bottom: calc(32px + var(--footer-height, 75px) + var(--safe-bottom));
+  .hookah-dock {
+    left: 14px;
+    right: auto;
+    top: calc(72px + var(--safe-top));
+    bottom: auto;
   }
+  .hookah-toast { left: 0; right: auto; top: calc(100% + 8px); bottom: auto; }
+  .hookah-dock .flavour-open { min-width: 0; padding: 9px; gap: 0; }
+  .hookah-dock .flavour-open-copy, .hookah-dock .flavour-open-action { display: none; }
+  .hookah-icon-wrap { border-right: 0; padding-right: 0; width: 34px; }
+
+  .flavour-dock {
+    left: 14px;
+    right: auto;
+    top: calc(130px + var(--safe-top));
+    bottom: auto;
+  }
+  .flavour-toast { left: 0; right: auto; top: calc(100% + 8px); bottom: auto; }
   .flavour-dock .flavour-open {
     min-width: 0;
     padding: 9px;
@@ -1108,17 +1127,6 @@ html, body {
   }
   .flavour-dock .flavour-open-copy, .flavour-dock .flavour-open-action { display: none; }
   .flavour-dock .flavour-icon { border-right: 0; padding-right: 0; width: 34px; }
-
-  .hookah-dock {
-    left: auto;
-    right: 14px;
-    top: auto;
-    bottom: calc(32px + var(--footer-height, 75px) + var(--safe-bottom) + 74px);
-  }
-  .hookah-toast { left: auto; right: 0; top: auto; bottom: calc(100% + 12px); }
-  .hookah-dock .flavour-open { min-width: 0; padding: 9px; gap: 0; }
-  .hookah-dock .flavour-open-copy, .hookah-dock .flavour-open-action { display: none; }
-  .hookah-icon-wrap { border-right: 0; padding-right: 0; width: 34px; }
 
   .flavour-dialog {
     width: 100%;
@@ -1712,19 +1720,8 @@ html, body {
   100% { transform: translateY(-220px) scale(0.92); opacity: 0; }
 }
 
-/* Center Stage Active Smoker Spotlight */
+/* Center Stage: Active smoker is drawn directly on the main stage canvas */
 .baithak-center-stage {
-  position: fixed;
-  top: calc(76px + var(--safe-top));
-  left: 50%;
-  transform: translateX(-50%);
-  width: min(420px, calc(100vw - 32px));
-  z-index: 45;
-  pointer-events: auto;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.baithak-center-stage[hidden],
-.baithak-center-stage.is-hidden {
   display: none !important;
 }
 

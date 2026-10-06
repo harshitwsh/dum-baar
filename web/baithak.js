@@ -396,22 +396,55 @@ class BaithakManager {
 
   async _getMediaStream() {
     if (this.localStream) return this.localStream;
+
+    const camEl = document.getElementById('cam');
+    let videoTrack = null;
+
+    // 1. If #cam already has an active camera stream, reuse its video track directly!
+    if (camEl && camEl.srcObject && typeof camEl.srcObject.getVideoTracks === 'function') {
+      const tracks = camEl.srcObject.getVideoTracks();
+      if (tracks.length > 0 && tracks[0].readyState === 'live') {
+        videoTrack = tracks[0];
+      }
+    }
+
+    let audioTrack = null;
     try {
-      this.localStream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user' },
+      // Request mic audio only so the camera device is never restarted or interrupted
+      const audioStream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true }
       });
+      audioTrack = audioStream.getAudioTracks()[0];
     } catch (e) {
-      console.warn("Could not get webcam+audio, trying audio only:", e);
+      console.warn("Microphone access unavailable or denied:", e);
+    }
+
+    if (videoTrack) {
+      const tracks = [videoTrack];
+      if (audioTrack) tracks.push(audioTrack);
+      this.localStream = new MediaStream(tracks);
+    } else {
+      // If camera was not started yet, request both video and audio
       try {
-        this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        this.localStream = await navigator.mediaDevices.getUserMedia({
+          video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+          audio: { echoCancellation: true, noiseSuppression: true }
+        });
+        if (camEl && (!camEl.srcObject || !camEl.srcObject.active)) {
+          camEl.srcObject = this.localStream;
+          camEl.play().catch(() => {});
+        }
       } catch (err) {
-        console.warn("Media denied, proceeding with canvas dummy stream:", err);
-        const canvas = document.createElement('canvas');
-        canvas.width = 160; canvas.height = 120;
-        const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#2a2a2e'; ctx.fillRect(0, 0, 160, 120);
-        this.localStream = canvas.captureStream(10);
+        console.warn("Could not acquire camera+mic, falling back:", err);
+        try {
+          this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        } catch (_) {
+          const canvas = document.createElement('canvas');
+          canvas.width = 160; canvas.height = 120;
+          const ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#2a2a2e'; ctx.fillRect(0, 0, 160, 120);
+          this.localStream = canvas.captureStream(10);
+        }
       }
     }
     return this.localStream;
@@ -575,6 +608,13 @@ class BaithakManager {
     call.on('stream', (remoteStream) => {
       const p = this.participants.get(remotePeerId) || { name: call.metadata?.name || 'Friend' };
       p.stream = remoteStream;
+      const vid = document.createElement('video');
+      vid.autoplay = true;
+      vid.playsInline = true;
+      vid.muted = false;
+      vid.srcObject = remoteStream;
+      vid.play().catch(() => {});
+      p._videoEl = vid;
       this.participants.set(remotePeerId, p);
       this._renderVideoTiles();
     });
@@ -716,6 +756,28 @@ class BaithakManager {
 
   getRemoteDrawState() {
     return this.remoteDrawState;
+  }
+
+  getHolderVideoElement() {
+    if (!this.isInRoom || this.amIHolder()) return null;
+    const p = this.participants.get(this.pipeHolderId);
+    if (!p) return null;
+    if (p._videoEl && p._videoEl.readyState >= 2 && p._videoEl.videoWidth > 0) {
+      return p._videoEl;
+    }
+    if (p.stream) {
+      if (!p._videoEl) {
+        const vid = document.createElement('video');
+        vid.autoplay = true;
+        vid.playsInline = true;
+        vid.muted = false;
+        vid.srcObject = p.stream;
+        vid.play().catch(() => {});
+        p._videoEl = vid;
+      }
+      return p._videoEl;
+    }
+    return null;
   }
 
   sendLocalDrawState(state) {
