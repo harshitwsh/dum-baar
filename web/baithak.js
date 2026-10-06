@@ -237,10 +237,13 @@ class BaithakManager {
             <div class="phrase-meta">
               <span class="phrase-name">🗣️ "Bhai Pass Kar!"</span>
               <span class="phrase-status" id="voice-status-pass">Default Voice</span>
+              <div class="voice-meter-bar" id="voice-meter-pass" hidden>
+                <div class="voice-meter-fill"></div>
+              </div>
             </div>
             <div class="phrase-actions">
               <button type="button" class="btn-voice-rec" data-key="pass">🔴 Record</button>
-              <button type="button" class="btn-voice-play" data-key="pass">▶️ Play</button>
+              <button type="button" class="btn-voice-play" data-key="pass">▶️ Test Voice</button>
               <button type="button" class="btn-voice-reset" data-key="pass">↺ Reset</button>
             </div>
           </div>
@@ -249,10 +252,13 @@ class BaithakManager {
             <div class="phrase-meta">
               <span class="phrase-name">🔥 "Kya Dum Maara!"</span>
               <span class="phrase-status" id="voice-status-dum">Default Voice</span>
+              <div class="voice-meter-bar" id="voice-meter-dum" hidden>
+                <div class="voice-meter-fill"></div>
+              </div>
             </div>
             <div class="phrase-actions">
               <button type="button" class="btn-voice-rec" data-key="dum">🔴 Record</button>
-              <button type="button" class="btn-voice-play" data-key="dum">▶️ Play</button>
+              <button type="button" class="btn-voice-play" data-key="dum">▶️ Test Voice</button>
               <button type="button" class="btn-voice-reset" data-key="dum">↺ Reset</button>
             </div>
           </div>
@@ -261,10 +267,13 @@ class BaithakManager {
             <div class="phrase-meta">
               <span class="phrase-name">💨 "Chhalla Bana!"</span>
               <span class="phrase-status" id="voice-status-ring">Default Voice</span>
+              <div class="voice-meter-bar" id="voice-meter-ring" hidden>
+                <div class="voice-meter-fill"></div>
+              </div>
             </div>
             <div class="phrase-actions">
               <button type="button" class="btn-voice-rec" data-key="ring">🔴 Record</button>
-              <button type="button" class="btn-voice-play" data-key="ring">▶️ Play</button>
+              <button type="button" class="btn-voice-play" data-key="ring">▶️ Test Voice</button>
               <button type="button" class="btn-voice-reset" data-key="ring">↺ Reset</button>
             </div>
           </div>
@@ -273,10 +282,13 @@ class BaithakManager {
             <div class="phrase-meta">
               <span class="phrase-name">👏 "Wah Wah!"</span>
               <span class="phrase-status" id="voice-status-wah">Default Voice</span>
+              <div class="voice-meter-bar" id="voice-meter-wah" hidden>
+                <div class="voice-meter-fill"></div>
+              </div>
             </div>
             <div class="phrase-actions">
               <button type="button" class="btn-voice-rec" data-key="wah">🔴 Record</button>
-              <button type="button" class="btn-voice-play" data-key="wah">▶️ Play</button>
+              <button type="button" class="btn-voice-play" data-key="wah">▶️ Test Voice</button>
               <button type="button" class="btn-voice-reset" data-key="wah">↺ Reset</button>
             </div>
           </div>
@@ -285,10 +297,13 @@ class BaithakManager {
             <div class="phrase-meta">
               <span class="phrase-name">🍹 "Cheers!"</span>
               <span class="phrase-status" id="voice-status-cheer">Default Voice</span>
+              <div class="voice-meter-bar" id="voice-meter-cheer" hidden>
+                <div class="voice-meter-fill"></div>
+              </div>
             </div>
             <div class="phrase-actions">
               <button type="button" class="btn-voice-rec" data-key="cheer">🔴 Record</button>
-              <button type="button" class="btn-voice-play" data-key="cheer">▶️ Play</button>
+              <button type="button" class="btn-voice-play" data-key="cheer">▶️ Test Voice</button>
               <button type="button" class="btn-voice-reset" data-key="cheer">↺ Reset</button>
             </div>
           </div>
@@ -458,6 +473,17 @@ class BaithakManager {
     this._attachVoiceStudioListeners();
   }
 
+  _getPhraseTitle(key) {
+    switch (key) {
+      case 'pass': return 'Bhai Pass Kar!';
+      case 'dum': return 'Kya Dum Maara!';
+      case 'ring': return 'Chhalla Bana!';
+      case 'wah': return 'Wah Wah!';
+      case 'cheer': return 'Cheers!';
+      default: return key;
+    }
+  }
+
   _attachVoiceStudioListeners() {
     const dialog = document.getElementById('voice-studio-dialog');
     const openBtn = document.getElementById('btn-open-voice-studio');
@@ -469,71 +495,332 @@ class BaithakManager {
     });
 
     closeBtn?.addEventListener('click', () => {
+      if (this._voiceRecorder && this._voiceRecorder.isRecording) {
+        this._voiceRecorder.stopAndDiscard();
+      }
       dialog?.close();
     });
 
-    let currentMediaRecorder = null;
-    let recordingChunks = [];
-    let activeKey = null;
+    // Universal PCM WAV Voice Recorder (100% cross-browser on macOS, iOS, Chrome, Safari, Android)
+    this._voiceRecorder = {
+      isRecording: false,
+      activeKey: null,
+      stream: null,
+      audioCtx: null,
+      source: null,
+      processor: null,
+      analyser: null,
+      samples: [],
+      startTime: 0,
+      timerId: null,
 
-    document.querySelectorAll('.btn-voice-rec').forEach(btn => {
+      async start(key, onProgress, onAutoStop) {
+        if (this.isRecording) {
+          this.stopAndDiscard();
+        }
+        this.activeKey = key;
+        this.samples = [];
+
+        try {
+          const AudioCtx = window.AudioContext || window.webkitAudioContext;
+          this.audioCtx = new AudioCtx();
+          if (this.audioCtx.state === 'suspended') {
+            await this.audioCtx.resume();
+          }
+
+          this.stream = await navigator.mediaDevices.getUserMedia({
+            audio: {
+              echoCancellation: false,
+              noiseSuppression: false,
+              autoGainControl: true
+            }
+          });
+
+          this.source = this.audioCtx.createMediaStreamSource(this.stream);
+          this.analyser = this.audioCtx.createAnalyser();
+          this.analyser.fftSize = 256;
+          this.source.connect(this.analyser);
+
+          // 4096 samples buffer (~92ms)
+          this.processor = this.audioCtx.createScriptProcessor(4096, 1, 1);
+          this.source.connect(this.processor);
+          this.processor.connect(this.audioCtx.destination);
+
+          this.isRecording = true;
+          this.startTime = performance.now();
+
+          const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+
+          this.processor.onaudioprocess = (e) => {
+            if (!this.isRecording) return;
+            const input = e.inputBuffer.getChannelData(0);
+            this.samples.push(new Float32Array(input));
+          };
+
+          this.timerId = setInterval(() => {
+            if (!this.isRecording) return;
+            const elapsed = (performance.now() - this.startTime) / 1000;
+            this.analyser.getByteFrequencyData(dataArray);
+            let sum = 0;
+            for (let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+            const volume = Math.min(1.0, (sum / dataArray.length) / 64);
+
+            if (onProgress) onProgress(elapsed, volume);
+
+            // Auto-stop at 4.5 seconds max
+            if (elapsed >= 4.5) {
+              if (onAutoStop) onAutoStop(this.activeKey);
+            }
+          }, 80);
+
+          return true;
+        } catch (err) {
+          console.error("Microphone record error:", err);
+          alert("Microphone permission needed to record your voice: " + err.message);
+          this.stopAndDiscard();
+          return false;
+        }
+      },
+
+      stopAndSave() {
+        if (!this.isRecording) return null;
+        this.isRecording = false;
+
+        if (this.timerId) {
+          clearInterval(this.timerId);
+          this.timerId = null;
+        }
+        if (this.processor) {
+          this.processor.disconnect();
+          this.processor = null;
+        }
+        if (this.source) {
+          this.source.disconnect();
+          this.source = null;
+        }
+        if (this.stream) {
+          this.stream.getTracks().forEach(t => t.stop());
+          this.stream = null;
+        }
+
+        const currentKey = this.activeKey;
+        const nativeSampleRate = this.audioCtx ? this.audioCtx.sampleRate : 44100;
+        if (this.audioCtx && this.audioCtx.state !== 'closed') {
+          this.audioCtx.close().catch(() => {});
+          this.audioCtx = null;
+        }
+
+        if (this.samples.length === 0) return null;
+
+        // Flatten sample chunks
+        let total = 0;
+        for (const s of this.samples) total += s.length;
+        const merged = new Float32Array(total);
+        let offset = 0;
+        for (const s of this.samples) {
+          merged.set(s, offset);
+          offset += s.length;
+        }
+        this.samples = [];
+
+        // Trim leading and trailing silence
+        let start = 0;
+        while (start < merged.length && Math.abs(merged[start]) < 0.012) start++;
+        let end = merged.length - 1;
+        while (end > start && Math.abs(merged[end]) < 0.012) end--;
+        const trimmed = (end > start)
+          ? merged.subarray(Math.max(0, start - 500), Math.min(merged.length, end + 500))
+          : merged;
+
+        // Downsample to 22050Hz for compact size
+        const targetRate = 22050;
+        const ratio = nativeSampleRate / targetRate;
+        const downsampledLength = Math.round(trimmed.length / ratio);
+        const downsampled = new Float32Array(downsampledLength);
+        let outIdx = 0, inIdx = 0;
+        while (outIdx < downsampledLength) {
+          const nextInIdx = Math.round((outIdx + 1) * ratio);
+          let sum = 0, count = 0;
+          for (let i = inIdx; i < nextInIdx && i < trimmed.length; i++) {
+            sum += trimmed[i];
+            count++;
+          }
+          downsampled[outIdx] = count > 0 ? (sum / count) : 0;
+          outIdx++;
+          inIdx = nextInIdx;
+        }
+
+        // Encode to standard RIFF PCM 16-bit WAV
+        const wavBuffer = new ArrayBuffer(44 + downsampled.length * 2);
+        const view = new DataView(wavBuffer);
+        const writeStr = (off, str) => {
+          for (let i = 0; i < str.length; i++) view.setUint8(off + i, str.charCodeAt(i));
+        };
+        writeStr(0, 'RIFF');
+        view.setUint32(4, 36 + downsampled.length * 2, true);
+        writeStr(8, 'WAVE');
+        writeStr(12, 'fmt ');
+        view.setUint32(16, 16, true);
+        view.setUint16(20, 1, true); // PCM
+        view.setUint16(22, 1, true); // Mono
+        view.setUint32(24, targetRate, true);
+        view.setUint32(28, targetRate * 2, true);
+        view.setUint16(32, 2, true);
+        view.setUint16(34, 16, true);
+        writeStr(36, 'data');
+        view.setUint32(40, downsampled.length * 2, true);
+
+        // Boost speech amplitude slightly (1.35x)
+        let dataOffset = 44;
+        for (let i = 0; i < downsampled.length; i++, dataOffset += 2) {
+          let val = Math.max(-1, Math.min(1, downsampled[i] * 1.35));
+          view.setInt16(dataOffset, val < 0 ? val * 0x8000 : val * 0x7FFF, true);
+        }
+
+        const wavBlob = new Blob([wavBuffer], { type: 'audio/wav' });
+        return { key: currentKey, blob: wavBlob };
+      },
+
+      stopAndDiscard() {
+        this.isRecording = false;
+        if (this.timerId) clearInterval(this.timerId);
+        if (this.processor) this.processor.disconnect();
+        if (this.source) this.source.disconnect();
+        if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+        if (this.audioCtx && this.audioCtx.state !== 'closed') this.audioCtx.close().catch(() => {});
+        this.samples = [];
+      }
+    };
+
+    // Attach button listeners
+    const recButtons = document.querySelectorAll('.btn-voice-rec');
+    recButtons.forEach(btn => {
       btn.addEventListener('click', async () => {
         const key = btn.dataset.key;
-        if (currentMediaRecorder && currentMediaRecorder.state === 'recording') {
-          currentMediaRecorder.stop();
+        const item = btn.closest('.voice-phrase-item');
+        const statusEl = document.getElementById(`voice-status-${key}`);
+        const meterEl = document.getElementById(`voice-meter-${key}`);
+        const meterFill = meterEl?.querySelector('.voice-meter-fill');
+
+        // If this button is already recording, stop & save!
+        if (this._voiceRecorder.isRecording && this._voiceRecorder.activeKey === key) {
+          const result = this._voiceRecorder.stopAndSave();
+          this._finalizeRecording(result, btn, item, statusEl, meterEl);
           return;
         }
 
-        try {
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          recordingChunks = [];
-          activeKey = key;
-          currentMediaRecorder = new MediaRecorder(stream);
+        // If another button was recording, stop it first
+        if (this._voiceRecorder.isRecording) {
+          const prevKey = this._voiceRecorder.activeKey;
+          const prevBtn = document.querySelector(`.btn-voice-rec[data-key="${prevKey}"]`);
+          const prevItem = prevBtn?.closest('.voice-phrase-item');
+          const prevStatus = document.getElementById(`voice-status-${prevKey}`);
+          const prevMeter = document.getElementById(`voice-meter-${prevKey}`);
+          const result = this._voiceRecorder.stopAndSave();
+          this._finalizeRecording(result, prevBtn, prevItem, prevStatus, prevMeter);
+        }
 
-          currentMediaRecorder.ondataavailable = (e) => {
-            if (e.data.size > 0) recordingChunks.push(e.data);
-          };
+        // Start recording
+        btn.textContent = '⏹️ Save (0:01)';
+        btn.classList.add('is-recording');
+        item?.classList.add('is-recording-item');
+        if (statusEl) {
+          statusEl.textContent = '🔴 Recording... Say phrase now!';
+          statusEl.className = 'phrase-status recording';
+        }
+        if (meterEl) meterEl.hidden = false;
 
-          currentMediaRecorder.onstop = () => {
-            const blob = new Blob(recordingChunks, { type: 'audio/webm' });
-            const reader = new FileReader();
-            reader.onloadend = () => {
-              const base64Audio = reader.result;
-              localStorage.setItem(`dumbaar.custom_voice.${activeKey}`, base64Audio);
-              btn.textContent = '🔴 Record';
-              btn.classList.remove('is-recording');
-              this._updateVoiceStudioStatus();
-              this.showToast(`🎙️ Custom voice saved for ${activeKey}!`);
-            };
-            reader.readAsDataURL(blob);
-          };
+        const started = await this._voiceRecorder.start(
+          key,
+          (elapsed, volume) => {
+            const sec = Math.floor(elapsed);
+            btn.textContent = `⏹️ Save (0:0${sec})`;
+            if (meterFill) {
+              meterFill.style.width = `${Math.min(100, Math.round(volume * 100))}%`;
+            }
+          },
+          (autoKey) => {
+            // Auto stop when max duration reached
+            const res = this._voiceRecorder.stopAndSave();
+            this._finalizeRecording(res, btn, item, statusEl, meterEl);
+          }
+        );
 
-          currentMediaRecorder.start();
-          btn.textContent = '⏹️ Stop';
-          btn.classList.add('is-recording');
-        } catch (err) {
-          alert("Microphone permission needed to record voice: " + err.message);
+        if (!started) {
+          btn.textContent = '🔴 Record';
+          btn.classList.remove('is-recording');
+          item?.classList.remove('is-recording-item');
+          if (meterEl) meterEl.hidden = true;
+          this._updateVoiceStudioStatus();
         }
       });
     });
 
+    // Play/Test Voice
     document.querySelectorAll('.btn-voice-play').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.key;
         if (window.hookahAudio) {
+          const hasCustom = !!localStorage.getItem(`dumbaar.custom_voice.${key}`);
           window.hookahAudio.playReactionSound(key);
+          if (!hasCustom) {
+            this.showToast(`Playing studio default for "${this._getPhraseTitle(key)}". Tap 🔴 Record to use your own voice!`);
+          }
         }
       });
     });
 
+    // Reset Voice
     document.querySelectorAll('.btn-voice-reset').forEach(btn => {
       btn.addEventListener('click', () => {
         const key = btn.dataset.key;
         localStorage.removeItem(`dumbaar.custom_voice.${key}`);
         this._updateVoiceStudioStatus();
-        this.showToast(`↺ Reset ${key} voice to default.`);
+        this.showToast(`↺ Reset "${this._getPhraseTitle(key)}" to studio default.`);
       });
     });
+  }
+
+  _finalizeRecording(result, btn, item, statusEl, meterEl) {
+    if (btn) {
+      btn.textContent = '🔴 Record';
+      btn.classList.remove('is-recording');
+    }
+    if (item) {
+      item.classList.remove('is-recording-item');
+    }
+    if (meterEl) {
+      meterEl.hidden = true;
+      const fill = meterEl.querySelector('.voice-meter-fill');
+      if (fill) fill.style.width = '0%';
+    }
+
+    if (!result || !result.blob) {
+      this._updateVoiceStudioStatus();
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const base64Audio = reader.result;
+      try {
+        localStorage.setItem(`dumbaar.custom_voice.${result.key}`, base64Audio);
+        console.log(`[Dum Baar Voice Studio] Successfully saved custom voice for ${result.key} (${result.blob.size} bytes WAV)`);
+        this._updateVoiceStudioStatus();
+        this.showToast(`🎙️ Custom voice saved for "${this._getPhraseTitle(result.key)}"! Tap "▶️ Test Voice" to test.`);
+
+        // Immediate audio feedback preview
+        setTimeout(() => {
+          if (window.hookahAudio) {
+            window.hookahAudio.playReactionSound(result.key);
+          }
+        }, 150);
+      } catch (err) {
+        console.error("Storage error:", err);
+        alert("Failed to save audio to storage: " + err.message);
+      }
+    };
+    reader.readAsDataURL(result.blob);
   }
 
   _updateVoiceStudioStatus() {
@@ -541,7 +828,7 @@ class BaithakManager {
       const statusEl = document.getElementById(`voice-status-${key}`);
       const hasCustom = !!localStorage.getItem(`dumbaar.custom_voice.${key}`);
       if (statusEl) {
-        statusEl.textContent = hasCustom ? '✨ Real Voice Active' : 'Studio Voice (Default)';
+        statusEl.textContent = hasCustom ? '✨ Real Voice Active (Saved)' : 'Studio Voice (Default)';
         statusEl.className = hasCustom ? 'phrase-status custom' : 'phrase-status';
       }
     });
@@ -1203,7 +1490,7 @@ class BaithakManager {
         const vid = document.createElement('video');
         vid.autoplay = true;
         vid.playsInline = true;
-        vid.muted = false;
+        vid.muted = true;
         vid.srcObject = p.stream;
         vid.play().catch(() => {});
         p._videoEl = vid;

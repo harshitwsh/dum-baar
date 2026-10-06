@@ -232,10 +232,29 @@ class HookahAudio {
     }
 
     const customAudio = localStorage.getItem(`dumbaar.custom_voice.${key}`);
-    const src = customAudio || defaultFile;
+    if (customAudio && customAudio.length > 50) {
+      try {
+        const audio = new Audio(customAudio);
+        audio.volume = 1.0;
+        const playPromise = audio.play();
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            console.log(`[Dum Baar Audio] Playing custom voice for: ${key}`);
+          }).catch(err => {
+            console.warn(`[Dum Baar Audio] Custom playback failed for ${key}, falling back to studio default:`, err);
+            const fallback = new Audio(defaultFile);
+            fallback.volume = 1.0;
+            fallback.play().catch(() => {});
+          });
+        }
+        return;
+      } catch (e) {
+        console.warn("[Dum Baar Audio] Error initializing custom audio playback:", e);
+      }
+    }
 
     try {
-      const audio = new Audio(src);
+      const audio = new Audio(defaultFile);
       audio.volume = 1.0;
       audio.play().catch(err => {
         console.warn("Reaction audio play error:", err);

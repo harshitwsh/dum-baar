@@ -2035,7 +2035,7 @@ html, body {
 @media (max-width: 760px) {
   .baithak-center-stage {
     position: fixed;
-    top: calc(64px + var(--safe-top));
+    top: calc(56px + var(--safe-top));
     left: 50%;
     transform: translateX(-50%);
     width: calc(100vw - 20px);
@@ -2043,21 +2043,25 @@ html, body {
     z-index: 55;
   }
   .smoker-video-box {
-    height: 135px;
+    height: 125px;
   }
   .baithak-dock {
     left: 10px;
     right: 10px;
-    top: calc(72px + var(--safe-top));
+    top: auto;
+    bottom: calc(10px + var(--safe-bottom));
     width: auto;
-    max-height: 44vh;
+    max-height: 48vh;
+    z-index: 60;
   }
   .baithak-dock.is-expanded {
     left: 10px;
     right: 10px;
+    top: auto;
+    bottom: calc(10px + var(--safe-bottom));
     transform: none;
     width: auto;
-    max-height: 60vh;
+    max-height: 82vh;
   }
   .baithak-videos-grid {
     display: flex;
@@ -2066,6 +2070,7 @@ html, body {
     max-height: none;
     gap: 8px;
     padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch;
   }
   .video-tile {
     width: 120px;
@@ -2105,6 +2110,12 @@ html, body {
   border: var(--hair);
   border-radius: var(--r-sm);
   gap: 10px;
+  transition: all 0.2s ease;
+}
+.voice-phrase-item.is-recording-item {
+  border-color: #EF4444;
+  box-shadow: 0 0 0 1.5px rgba(239, 68, 68, 0.4);
+  background: #FFF5F5;
 }
 .phrase-meta {
   display: flex;
@@ -2123,8 +2134,28 @@ html, body {
   color: #737367;
 }
 .phrase-status.custom {
-  color: #1f8a4c;
+  color: #10B981;
   font-weight: 600;
+}
+.phrase-status.recording {
+  color: #DC2626;
+  font-weight: 600;
+  animation: pulse-recording 1s infinite alternate;
+}
+.voice-meter-bar {
+  height: 4px;
+  width: 100%;
+  background: #E5E5DE;
+  border-radius: 999px;
+  overflow: hidden;
+  margin-top: 6px;
+}
+.voice-meter-fill {
+  height: 100%;
+  width: 0%;
+  background: #10B981;
+  border-radius: 999px;
+  transition: width 0.08s ease;
 }
 .phrase-actions {
   display: flex;
@@ -2175,4 +2206,34 @@ html, body {
 .voice-studio-btn:hover {
   background: var(--ember) !important;
   color: #FFFFFF !important;
+}
+
+@media (max-width: 520px) {
+  .voice-studio-dialog {
+    width: calc(100vw - 16px);
+    max-height: 90dvh;
+    margin: auto auto 10px;
+    border-radius: var(--r-md);
+  }
+  .voice-studio-card {
+    padding: 16px 14px;
+  }
+  .voice-phrase-item {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .phrase-actions {
+    display: grid;
+    grid-template-columns: 1.2fr 1fr 0.8fr;
+    gap: 6px;
+    width: 100%;
+  }
+  .btn-voice-rec, .btn-voice-play, .btn-voice-reset {
+    padding: 8px 6px;
+    font-size: 11px;
+    text-align: center;
+    justify-content: center;
+  }
 }
