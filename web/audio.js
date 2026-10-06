@@ -1,11 +1,13 @@
 // Realistic Web Audio synthesizer for Dum Baar
 // Generates authentic water bubbling sounds during inhalation (draw),
 // soft airy exhale whoosh sounds during smoke blow,
-// and resonant crystalline chimes when smoke rings are blown.
+// resonant crystalline chimes when smoke rings are blown,
+// and rich procedural audio for social lounge reactions.
 
 class HookahAudio {
   constructor() {
     this.ctx = null;
+    this.compressor = null;
     this.masterGain = null;
     this.drawGain = null;
     this.exhaleGain = null;
@@ -14,7 +16,7 @@ class HookahAudio {
     this.isExhaling = false;
     this.noiseBuffer = null;
     this.isMuted = false;
-    this.volume = 0.85;
+    this.volume = 1.35; // Boosted volume
   }
 
   init() {
@@ -33,10 +35,19 @@ class HookahAudio {
       return;
     }
 
+    // Dynamic range compressor for rich, loud, punchy audio without clipping
+    this.compressor = this.ctx.createDynamicsCompressor();
+    this.compressor.threshold.setValueAtTime(-16, this.ctx.currentTime);
+    this.compressor.knee.setValueAtTime(20, this.ctx.currentTime);
+    this.compressor.ratio.setValueAtTime(4.5, this.ctx.currentTime);
+    this.compressor.attack.setValueAtTime(0.003, this.ctx.currentTime);
+    this.compressor.release.setValueAtTime(0.2, this.ctx.currentTime);
+
     // Master volume gain
     this.masterGain = this.ctx.createGain();
     this.masterGain.gain.setValueAtTime(this.isMuted ? 0 : this.volume, this.ctx.currentTime);
-    this.masterGain.connect(this.ctx.destination);
+    this.masterGain.connect(this.compressor);
+    this.compressor.connect(this.ctx.destination);
 
     // Create 2 seconds of pink/brown noise
     const bufferSize = this.ctx.sampleRate * 2;
@@ -46,7 +57,7 @@ class HookahAudio {
     for (let i = 0; i < bufferSize; i++) {
       const white = Math.random() * 2 - 1;
       lastOut = (lastOut + 0.02 * white) / 1.02;
-      data[i] = lastOut * 3.5;
+      data[i] = lastOut * 3.8;
     }
 
     // Master draw gain
@@ -66,8 +77,8 @@ class HookahAudio {
 
     const exhaleFilter = this.ctx.createBiquadFilter();
     exhaleFilter.type = 'lowpass';
-    exhaleFilter.frequency.setValueAtTime(650, this.ctx.currentTime);
-    exhaleFilter.Q.setValueAtTime(1.2, this.ctx.currentTime);
+    exhaleFilter.frequency.setValueAtTime(750, this.ctx.currentTime);
+    exhaleFilter.Q.setValueAtTime(1.4, this.ctx.currentTime);
 
     exhaleSource.connect(exhaleFilter);
     exhaleFilter.connect(this.exhaleGain);
@@ -84,7 +95,7 @@ class HookahAudio {
     return this.isMuted;
   }
 
-  // Create individual water bubble "plop / blub"
+  // Create individual water bubble "plop / blub" (boosted loudness)
   _triggerBubble(intensity = 1.0) {
     if (!this.ctx || this.ctx.state !== 'running' || this.isMuted) return;
     const now = this.ctx.currentTime;
@@ -93,16 +104,16 @@ class HookahAudio {
     const osc = this.ctx.createOscillator();
     const oscGain = this.ctx.createGain();
 
-    const startFreq = 150 + Math.random() * 130;
-    const endFreq = startFreq + 170 + Math.random() * 150;
-    const duration = 0.042 + Math.random() * 0.04;
+    const startFreq = 140 + Math.random() * 140;
+    const endFreq = startFreq + 180 + Math.random() * 160;
+    const duration = 0.045 + Math.random() * 0.04;
 
     osc.type = 'sine';
     osc.frequency.setValueAtTime(startFreq, now);
     osc.frequency.exponentialRampToValueAtTime(endFreq, now + duration);
 
     oscGain.gain.setValueAtTime(0.01, now);
-    oscGain.gain.linearRampToValueAtTime(0.24 * intensity, now + 0.008);
+    oscGain.gain.linearRampToValueAtTime(0.48 * intensity, now + 0.007);
     oscGain.gain.exponentialRampToValueAtTime(0.001, now + duration);
 
     // Noise burst for the water splash / pop
@@ -111,12 +122,12 @@ class HookahAudio {
 
     const noiseFilter = this.ctx.createBiquadFilter();
     noiseFilter.type = 'bandpass';
-    noiseFilter.frequency.setValueAtTime(320 + Math.random() * 160, now);
-    noiseFilter.Q.setValueAtTime(3.2, now);
+    noiseFilter.frequency.setValueAtTime(340 + Math.random() * 160, now);
+    noiseFilter.Q.setValueAtTime(3.0, now);
 
     const noiseGain = this.ctx.createGain();
-    noiseGain.gain.setValueAtTime(0.14 * intensity, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 1.25);
+    noiseGain.gain.setValueAtTime(0.32 * intensity, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + duration * 1.3);
 
     osc.connect(oscGain);
     oscGain.connect(this.drawGain);
@@ -129,7 +140,7 @@ class HookahAudio {
     noiseSrc.start(now);
 
     osc.stop(now + duration);
-    noiseSrc.stop(now + duration * 1.25);
+    noiseSrc.stop(now + duration * 1.3);
   }
 
   update(state) {
@@ -144,12 +155,12 @@ class HookahAudio {
     // Handle Bubbling (Drawing)
     if (isDrawing) {
       const now = this.ctx.currentTime;
-      this.drawGain.gain.setTargetAtTime(0.85, now, 0.05);
+      this.drawGain.gain.setTargetAtTime(1.1, now, 0.04);
       if (!this.bubbleTimer) {
         const scheduleBubble = () => {
           if (!this.isDrawing) return;
           this._triggerBubble(state.drawIntensity || 1.0);
-          const nextInterval = 42 + Math.random() * 60; // 14-20 bubbles/sec
+          const nextInterval = 38 + Math.random() * 55; // Rapid rich bubbling 16-22 bubbles/sec
           this.bubbleTimer = setTimeout(scheduleBubble, nextInterval);
         };
         this.isDrawing = true;
@@ -162,16 +173,16 @@ class HookahAudio {
         this.bubbleTimer = null;
       }
       if (this.drawGain) {
-        this.drawGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.08);
+        this.drawGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.06);
       }
     }
 
-    // Handle Exhale sound
+    // Handle Exhale sound (boosted loudness)
     if (isExhaling && state.lung > 0) {
-      const rate = state.exhaleRate || 0.6;
-      this.exhaleGain.gain.setTargetAtTime(Math.min(0.55, rate * 0.48), this.ctx.currentTime, 0.08);
+      const rate = state.exhaleRate || 0.65;
+      this.exhaleGain.gain.setTargetAtTime(Math.min(0.85, rate * 0.72), this.ctx.currentTime, 0.06);
     } else {
-      this.exhaleGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.12);
+      this.exhaleGain.gain.setTargetAtTime(0, this.ctx.currentTime, 0.1);
     }
   }
 
@@ -183,18 +194,111 @@ class HookahAudio {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(440, now);
-    osc.frequency.exponentialRampToValueAtTime(784, now + 0.14);
-    osc.frequency.exponentialRampToValueAtTime(659, now + 0.36);
+    osc.frequency.setValueAtTime(460, now);
+    osc.frequency.exponentialRampToValueAtTime(840, now + 0.14);
+    osc.frequency.exponentialRampToValueAtTime(680, now + 0.38);
 
     gain.gain.setValueAtTime(0.01, now);
-    gain.gain.linearRampToValueAtTime(0.24, now + 0.03);
-    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+    gain.gain.linearRampToValueAtTime(0.45, now + 0.025);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
 
     osc.connect(gain);
     gain.connect(this.masterGain || this.ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.4);
+    osc.stop(now + 0.45);
+  }
+
+  // Play reaction sound bites
+  playReactionSound(type = 'default') {
+    if (!this.ctx || this.isMuted) return;
+    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
+    const now = this.ctx.currentTime;
+
+    const lower = String(type).toLowerCase();
+
+    if (lower.includes('pass')) {
+      // Ascending two-tone melodic chime: "Bhai pass kar!"
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc1.type = 'sine';
+      osc2.type = 'triangle';
+      osc1.frequency.setValueAtTime(392, now); // G4
+      osc1.frequency.exponentialRampToValueAtTime(587.33, now + 0.15); // D5
+      osc2.frequency.setValueAtTime(493.88, now + 0.1); // B4
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.4, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(this.masterGain);
+      osc1.start(now); osc2.start(now);
+      osc1.stop(now + 0.45); osc2.stop(now + 0.45);
+
+    } else if (lower.includes('dum') || lower.includes('flame')) {
+      // Warm power chord & ember swoosh: "Kya dum maara!"
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.22);
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.5, now + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.5);
+
+    } else if (lower.includes('ring') || lower.includes('chhalla')) {
+      this.playRingChime();
+
+    } else if (lower.includes('wah') || lower.includes('clap')) {
+      // Double rhythmic percussive hand clap / acoustic tap
+      for (let i = 0; i < 2; i++) {
+        const t = now + i * 0.12;
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(320, t);
+        osc.frequency.exponentialRampToValueAtTime(140, t + 0.08);
+        g.gain.setValueAtTime(0.45, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+        osc.connect(g);
+        g.connect(this.masterGain);
+        osc.start(t);
+        osc.stop(t + 0.09);
+      }
+
+    } else if (lower.includes('cheer')) {
+      // Crystal glass toast "clink"
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(1760, now); // A6 high crystal chime
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.55, now + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.7);
+
+    } else {
+      // Default pleasant bubble notification
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(523.25, now);
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.12);
+      gain.gain.setValueAtTime(0.01, now);
+      gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+      osc.connect(gain);
+      gain.connect(this.masterGain);
+      osc.start(now);
+      osc.stop(now + 0.35);
+    }
   }
 }
 

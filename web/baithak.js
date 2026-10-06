@@ -1,5 +1,6 @@
 // Dum Baar — Online Multiplayer Hookah Baithak (Virtual Lounge with Video Calls & Turn-Based Pipe Sharing)
 // Built with WebRTC (PeerJS) for real-time peer-to-peer video, audio, and pipe physics synchronization.
+// Strictly matches the "Ink wash & Soft Ivory" royal aesthetic.
 
 class BaithakManager {
   constructor() {
@@ -9,36 +10,53 @@ class BaithakManager {
     this.myName = localStorage.getItem('dumbaar.baithak.name') || 'Lounge Guest';
     this.isHost = false;
     this.isInRoom = false;
+    this.isExpanded = false;
     this.localStream = null;
     this.connections = new Map(); // peerId -> DataConnection
     this.mediaCalls = new Map();   // peerId -> MediaConnection
-    this.participants = new Map(); // peerId -> { name, isHolder, stream, videoEl }
+    this.participants = new Map(); // peerId -> { name, isHolder, stream }
     this.pipeHolderId = null;
     this.pipeHolderName = null;
     this.lastDrawSend = 0;
     this.remoteDrawState = null;
     this.isCamMuted = false;
     this.isMicMuted = false;
-    this.requestQueue = [];
 
     this._initUI();
     this._checkURLRoom();
   }
 
   _initUI() {
-    // Check if baithak elements exist in DOM or inject them
     this._injectModalAndDock();
   }
 
   _checkURLRoom() {
-    // If room param is in URL, auto-prompt join dialog
     const urlParams = new URLSearchParams(window.location.search);
     const room = urlParams.get('room');
     if (room) {
       setTimeout(() => {
         this.openModal(room);
-      }, 600);
+      }, 500);
     }
+  }
+
+  _dismissIntroSheet() {
+    const intro = document.getElementById('intro');
+    if (intro && !intro.hidden) {
+      intro.classList.add('leaving');
+      setTimeout(() => {
+        intro.hidden = true;
+      }, 380);
+    }
+    const coach = document.getElementById('coach');
+    if (coach) coach.hidden = false;
+
+    // Show docks
+    document.getElementById('hookah-dock')?.removeAttribute('hidden');
+    document.getElementById('flavour-dock')?.removeAttribute('hidden');
+
+    // Ensure audio context is ready
+    try { window.hookahAudio?.init(); } catch (_) {}
   }
 
   _injectModalAndDock() {
@@ -60,7 +78,7 @@ class BaithakManager {
 
         <div class="baithak-form">
           <div class="form-group">
-            <label for="baithak-username">Your Name</label>
+            <label for="baithak-username" class="baithak-label">Your Name</label>
             <input type="text" id="baithak-username" class="baithak-input" placeholder="e.g. Harshit" value="${this.myName}" maxlength="24">
           </div>
 
@@ -70,82 +88,101 @@ class BaithakManager {
           </div>
 
           <div id="section-create" class="baithak-section">
-            <p class="baithak-hint">Create a private virtual lounge and invite your friends with a link.</p>
-            <button type="button" id="btn-start-room" class="btn btn-cta">Start Baithak Room 🔥</button>
+            <p class="baithak-hint">Start a private virtual lounge. You'll receive a direct link to share with friends via WhatsApp or chat.</p>
+            <button type="button" id="btn-start-room" class="btn btn-cta" style="width:100%;margin-top:6px;">Start Baithak Room 🔥</button>
           </div>
 
           <div id="section-join" class="baithak-section" hidden>
-            <div class="form-group">
-              <label for="baithak-code-input">Baithak Room Code</label>
-              <input type="text" id="baithak-code-input" class="baithak-input" placeholder="e.g. ROYAL-842" uppercase>
+            <div class="form-group" style="margin-top:10px;">
+              <label for="baithak-code-input" class="baithak-label">Baithak Room Code</label>
+              <input type="text" id="baithak-code-input" class="baithak-input" placeholder="e.g. ROYAL-842" style="text-transform:uppercase;">
             </div>
-            <button type="button" id="btn-enter-room" class="btn btn-cta">Join Room 💨</button>
+            <p class="baithak-hint">Paste the 8-character code sent by your friend.</p>
+            <button type="button" id="btn-enter-room" class="btn btn-cta" style="width:100%;margin-top:6px;">Join Room 💨</button>
           </div>
         </div>
 
-        <p class="fine">Runs directly browser-to-browser via secure WebRTC. No logins or accounts needed.</p>
+        <p class="fine" style="margin-top:16px;">Direct browser-to-browser WebRTC encrypted connection. No signups or downloads required.</p>
       </section>
     `;
     document.body.appendChild(dialog);
 
-    // 2. In-Call Video Bar (floating on the right/top of the screen)
+    // 2. In-Call Video Lounge Dock
     const videoDock = document.createElement('aside');
     videoDock.id = 'baithak-dock';
     videoDock.className = 'baithak-dock';
     videoDock.hidden = true;
     videoDock.innerHTML = `
-      <div class="baithak-header-pill">
-        <div class="baithak-room-badge">
-          <span class="live-dot"></span>
-          <span id="baithak-room-name">Baithak</span>
-          <span id="baithak-user-count" class="user-count">1 friend</span>
-        </div>
-        <div class="baithak-header-actions">
-          <button type="button" id="btn-copy-invite" class="baithak-pill-btn" title="Copy Invite Link">🔗 Invite</button>
-          <button type="button" id="btn-leave-baithak" class="baithak-pill-btn danger" title="Leave Lounge">Leave</button>
-        </div>
-      </div>
+      <div class="baithak-dock-card">
+        <!-- Top Bar -->
+        <div class="baithak-dock-top">
+          <div class="baithak-room-pill">
+            <span class="live-pulse"></span>
+            <span id="baithak-room-name" class="room-name">#ROOM</span>
+            <span id="baithak-user-count" class="user-pill">1 friend</span>
+          </div>
 
-      <div id="baithak-videos-grid" class="baithak-videos-grid">
-        <!-- Local and Remote video tiles rendered here -->
-      </div>
-
-      <!-- Turn & Pipe Status Banner -->
-      <div id="baithak-turn-banner" class="baithak-turn-banner">
-        <div class="turn-info">
-          <span id="turn-icon" class="turn-icon">💨</span>
-          <span id="turn-text" class="turn-text">You hold the pipe. Take a drag!</span>
+          <div class="baithak-top-btns">
+            <button type="button" id="btn-toggle-expand" class="baithak-icon-btn" title="Toggle Fullscreen Lounge">⛶ Expand</button>
+            <button type="button" id="btn-copy-invite" class="baithak-icon-btn highlight" title="Copy Invite Link">🔗 Invite</button>
+            <button type="button" id="btn-leave-baithak" class="baithak-icon-btn danger" title="Leave Baithak">Leave</button>
+          </div>
         </div>
-        <div id="turn-actions" class="turn-actions">
-          <!-- Action buttons (Pass pipe, Request pipe) injected here -->
+
+        <!-- Dedicated Invite Banner for Host & Friends -->
+        <div id="baithak-invite-banner" class="baithak-invite-banner">
+          <div class="invite-banner-copy">
+            <span class="invite-title">Room Code: <strong id="invite-code-display">ROYAL-000</strong></span>
+            <span class="invite-sub">Share this link with friends to sit together:</span>
+          </div>
+          <div class="invite-banner-actions">
+            <button type="button" id="btn-copy-link-banner" class="btn btn-cta btn-banner-copy">📋 Copy Link</button>
+            <button type="button" id="btn-whatsapp-banner" class="btn btn-subtle btn-banner-wa">💬 WhatsApp</button>
+          </div>
         </div>
-      </div>
 
-      <!-- Quick Social Reactions Bar -->
-      <div class="baithak-reactions">
-        <button type="button" class="react-btn" data-reaction="🗣️ Bhai Pass Kar!">🗣️ Pass Kar!</button>
-        <button type="button" class="react-btn" data-reaction="🔥 Kya Dum Maara!">🔥 Dum Maara!</button>
-        <button type="button" class="react-btn" data-reaction="💨 Chhalla Bana!">💨 Ring!</button>
-        <button type="button" class="react-btn" data-reaction="👏 Wah Wah!">👏 Wah!</button>
-        <button type="button" class="react-btn" data-reaction="🍹 Cheers!">🍹 Cheers!</button>
-      </div>
+        <!-- Video Tiles Stage -->
+        <div id="baithak-videos-grid" class="baithak-videos-grid">
+          <!-- Self, Remote tiles, and Invite card rendered here -->
+        </div>
 
-      <!-- Media controls for self -->
-      <div class="baithak-controls">
-        <button type="button" id="btn-toggle-cam" class="media-ctrl-btn" title="Toggle Camera">📹 Cam</button>
-        <button type="button" id="btn-toggle-mic" class="media-ctrl-btn" title="Toggle Microphone">🎤 Mic</button>
+        <!-- Turn & Pipe Status Banner -->
+        <div id="baithak-turn-banner" class="baithak-turn-banner">
+          <div class="turn-info">
+            <span id="turn-icon" class="turn-icon">💨</span>
+            <span id="turn-text" class="turn-text">You hold the pipe. Take a drag!</span>
+          </div>
+          <div id="turn-actions" class="turn-actions">
+            <!-- Dynamic turn buttons -->
+          </div>
+        </div>
+
+        <!-- Quick Social Shout Reactions -->
+        <div class="baithak-reactions">
+          <button type="button" class="react-btn" data-reaction="🗣️ Bhai Pass Kar!">🗣️ Pass Kar!</button>
+          <button type="button" class="react-btn" data-reaction="🔥 Kya Dum Maara!">🔥 Dum Maara!</button>
+          <button type="button" class="react-btn" data-reaction="💨 Chhalla Bana!">💨 Ring!</button>
+          <button type="button" class="react-btn" data-reaction="👏 Wah Wah!">👏 Wah!</button>
+          <button type="button" class="react-btn" data-reaction="🍹 Cheers!">🍹 Cheers!</button>
+        </div>
+
+        <!-- Media Toggles -->
+        <div class="baithak-controls">
+          <button type="button" id="btn-toggle-cam" class="media-ctrl-btn" title="Toggle Camera">📹 Cam On</button>
+          <button type="button" id="btn-toggle-mic" class="media-ctrl-btn" title="Toggle Microphone">🎤 Mic On</button>
+        </div>
       </div>
     `;
     document.body.appendChild(videoDock);
 
-    // 3. Floating Reactions Canvas Overlay
+    // 3. Floating Reactions Layer
     const reactionsLayer = document.createElement('div');
     reactionsLayer.id = 'baithak-reactions-layer';
     reactionsLayer.className = 'baithak-reactions-layer';
     reactionsLayer.setAttribute('aria-hidden', 'true');
     document.body.appendChild(reactionsLayer);
 
-    // 4. Hook up DOM Event Listeners
+    // 4. Attach Event Listeners
     this._attachEventListeners();
   }
 
@@ -176,7 +213,7 @@ class BaithakManager {
     });
 
     btnStart?.addEventListener('click', () => {
-      const name = document.getElementById('baithak-username')?.value.trim() || 'Lounge Guest';
+      const name = document.getElementById('baithak-username')?.value.trim() || 'Lounge Host';
       this.createRoom(name);
     });
 
@@ -190,19 +227,38 @@ class BaithakManager {
       this.joinRoom(code, name);
     });
 
-    // Copy Invite Link
-    document.getElementById('btn-copy-invite')?.addEventListener('click', () => {
+    // Copy Invite Links
+    const copyLinkHandler = () => {
       const url = `${window.location.origin}${window.location.pathname}?room=${this.roomId}`;
       navigator.clipboard.writeText(url).then(() => {
-        this.showToast('📋 Invite link copied! Send it to your friends.');
+        this.showToast('📋 Invite link copied to clipboard! Send it to your friends.');
       }).catch(() => {
-        prompt('Copy this Baithak link:', url);
+        prompt('Copy this Baithak invite link:', url);
       });
+    };
+
+    document.getElementById('btn-copy-invite')?.addEventListener('click', copyLinkHandler);
+    document.getElementById('btn-copy-link-banner')?.addEventListener('click', copyLinkHandler);
+
+    // WhatsApp Share
+    document.getElementById('btn-whatsapp-banner')?.addEventListener('click', () => {
+      const url = `${window.location.origin}${window.location.pathname}?room=${this.roomId}`;
+      const text = encodeURIComponent(`Come sit with me in Dum Baar Hookah Baithak! 💨 Tap here to join our video lounge & smoke together: ${url}`);
+      window.open(`https://api.whatsapp.com/send?text=${text}`, '_blank');
+    });
+
+    // Expand / Fullscreen Toggle
+    document.getElementById('btn-toggle-expand')?.addEventListener('click', () => {
+      this.isExpanded = !this.isExpanded;
+      const dock = document.getElementById('baithak-dock');
+      const btn = document.getElementById('btn-toggle-expand');
+      if (dock) dock.classList.toggle('is-expanded', this.isExpanded);
+      if (btn) btn.textContent = this.isExpanded ? '🗗 Dock' : '⛶ Expand';
     });
 
     // Leave Room
     document.getElementById('btn-leave-baithak')?.addEventListener('click', () => {
-      if (confirm('Leave this Baithak room?')) {
+      if (confirm('Leave this Baithak room and return to solo lounge?')) {
         this.leaveRoom();
       }
     });
@@ -217,7 +273,7 @@ class BaithakManager {
       this.toggleMic();
     });
 
-    // Reactions
+    // Reactions with procedural audio shouts
     document.querySelectorAll('.react-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const text = btn.dataset.reaction;
@@ -225,7 +281,7 @@ class BaithakManager {
       });
     });
 
-    // Add Baithak button in main header top-actions
+    // Add Baithak button in main header top-actions if not present
     const topActions = document.querySelector('.top-actions');
     if (topActions && !document.getElementById('btn-open-baithak')) {
       const baithakBtn = document.createElement('button');
@@ -243,7 +299,6 @@ class BaithakManager {
       `;
       baithakBtn.addEventListener('click', () => {
         if (this.isInRoom) {
-          // Toggle video dock visibility
           const dock = document.getElementById('baithak-dock');
           if (dock) dock.hidden = !dock.hidden;
         } else {
@@ -270,7 +325,6 @@ class BaithakManager {
     document.getElementById('baithak-dialog')?.close();
   }
 
-  // Generate clean 4-character room code (e.g. "ROYAL-492")
   _generateRoomCode() {
     const prefixes = ['ROYAL', 'SHISHA', 'DUM', 'LOUNGE', 'CLOUD', 'EMBER'];
     const p = prefixes[Math.floor(Math.random() * prefixes.length)];
@@ -291,11 +345,10 @@ class BaithakManager {
         this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
       } catch (err) {
         console.warn("Media denied, proceeding with canvas dummy stream:", err);
-        // Create 1x1 black canvas stream so WebRTC call still functions
         const canvas = document.createElement('canvas');
         canvas.width = 160; canvas.height = 120;
         const ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#222'; ctx.fillRect(0, 0, 160, 120);
+        ctx.fillStyle = '#2a2a2e'; ctx.fillRect(0, 0, 160, 120);
         this.localStream = canvas.captureStream(10);
       }
     }
@@ -311,18 +364,19 @@ class BaithakManager {
     this.pipeHolderId = 'self';
     this.pipeHolderName = this.myName;
 
-    this.showToast(`Setting up Baithak #${this.roomId}...`);
+    this.showToast(`Starting Baithak #${this.roomId}...`);
     await this._getMediaStream();
 
     const hostPeerId = `dumbaar-${this.roomId.toLowerCase()}-host`;
     this._initPeer(hostPeerId, () => {
       this.isInRoom = true;
       this.closeModal();
+      this._dismissIntroSheet();
       this._updateRoomUI();
-      this.showToast(`🔥 Baithak #${this.roomId} started! Share the link with friends.`);
+      this.showToast(`🔥 Baithak #${this.roomId} started! Share link with friends.`);
       window.history.pushState(null, '', `?room=${this.roomId}`);
 
-      // Host starts with pipe
+      // Host starts holding the pipe
       this._setPipeHolder('self', this.myName);
     });
   }
@@ -334,7 +388,7 @@ class BaithakManager {
     this.roomId = roomId.toUpperCase().trim();
     this.isHost = false;
 
-    this.showToast(`Joining Baithak #${this.roomId}...`);
+    this.showToast(`Entering Baithak #${this.roomId}...`);
     await this._getMediaStream();
 
     const randSuffix = Math.random().toString(36).substring(2, 7);
@@ -344,6 +398,7 @@ class BaithakManager {
     this._initPeer(guestPeerId, () => {
       this.isInRoom = true;
       this.closeModal();
+      this._dismissIntroSheet();
       this._updateRoomUI();
       window.history.pushState(null, '', `?room=${this.roomId}`);
 
@@ -375,9 +430,7 @@ class BaithakManager {
       return;
     }
 
-    this.peer = new Peer(peerId, {
-      debug: 1
-    });
+    this.peer = new Peer(peerId, { debug: 1 });
 
     this.peer.on('open', (id) => {
       this.myPeerId = id;
@@ -393,12 +446,10 @@ class BaithakManager {
       }
     });
 
-    // Listen for incoming data connections
     this.peer.on('connection', (conn) => {
       this._handleConnection(conn);
     });
 
-    // Listen for incoming media calls
     this.peer.on('call', (call) => {
       call.answer(this.localStream);
       this._handleCall(call);
@@ -416,7 +467,6 @@ class BaithakManager {
         this._renderVideoTiles();
       }
 
-      // If Host: send state sync to new peer
       if (this.isHost) {
         const participantsList = Array.from(this.participants.entries()).map(([pid, p]) => ({
           peerId: pid,
@@ -433,7 +483,6 @@ class BaithakManager {
           hookah: window.__hookahScene?.body?.model?.id
         });
 
-        // Broadcast to existing peers about new joiner
         this._broadcast({
           type: 'PEER_JOINED',
           peerId: remotePeerId,
@@ -481,7 +530,6 @@ class BaithakManager {
       this.participants.delete(peerId);
     }
 
-    // If disconnected user had the pipe, release pipe
     if (this.pipeHolderId === peerId) {
       this._setPipeHolder('none', null);
       this.showToast("💨 The pipe is free on the table.");
@@ -518,7 +566,6 @@ class BaithakManager {
         this._renderVideoTiles();
         this._updateRoomUI();
 
-        // Connect media to new peer if not host
         if (!this.isHost && this.localStream) {
           const call = this.peer.call(data.peerId, this.localStream, { metadata: { name: this.myName } });
           this._handleCall(call);
@@ -526,10 +573,8 @@ class BaithakManager {
         break;
 
       case 'DRAW_UPDATE':
-        // Synchronize remote smoking state
         if (this.pipeHolderId === senderPeerId) {
           this.remoteDrawState = data.state;
-          // Trigger bubbling audio and glowing coals
           try {
             window.hookahAudio?.update(data.state);
             if (window.__hookahScene?.body) {
@@ -545,6 +590,7 @@ class BaithakManager {
         const targetId = data.targetPeerId === this.myPeerId ? 'self' : data.targetPeerId;
         this._setPipeHolder(targetId, data.targetName);
         this.showToast(`➡️ Pipe passed to ${data.targetName}!`);
+        try { window.hookahAudio?.playReactionSound('pass'); } catch (_) {}
         break;
 
       case 'REQUEST_PIPE':
@@ -555,13 +601,13 @@ class BaithakManager {
         break;
 
       case 'REACTION':
+        try { window.hookahAudio?.playReactionSound(data.text); } catch (_) {}
         this._showFloatingReaction(data.text, data.fromName);
         break;
 
       case 'RING':
         try {
           window.hookahAudio?.playRingChime();
-          // Spawn smoke ring in center
           if (window.__hookahScene?.smoke) {
             window.__hookahScene.smoke.spawnRing(0.5, 0.45, 0, -1, 120);
           }
@@ -605,7 +651,7 @@ class BaithakManager {
   sendLocalDrawState(state) {
     if (!this.isInRoom || !this.amIHolder()) return;
     const now = performance.now();
-    if (now - this.lastDrawSend > 50) { // Throttle to 20 updates/sec
+    if (now - this.lastDrawSend > 50) {
       this.lastDrawSend = now;
       this._broadcast({
         type: 'DRAW_UPDATE',
@@ -621,10 +667,12 @@ class BaithakManager {
 
   sendRing() {
     if (!this.isInRoom) return;
+    try { window.hookahAudio?.playRingChime(); } catch (_) {}
     this._broadcast({ type: 'RING' });
   }
 
   sendReaction(text) {
+    try { window.hookahAudio?.playReactionSound(text); } catch (_) {}
     this._showFloatingReaction(text, this.myName);
     if (this.isInRoom) {
       this._broadcast({
@@ -637,6 +685,7 @@ class BaithakManager {
 
   passPipeTo(targetPeerId, targetName) {
     this._setPipeHolder(targetPeerId === this.myPeerId ? 'self' : targetPeerId, targetName);
+    try { window.hookahAudio?.playReactionSound('pass'); } catch (_) {}
     this._broadcast({
       type: 'PASS_PIPE',
       targetPeerId,
@@ -672,16 +721,22 @@ class BaithakManager {
     if (!dock) return;
     dock.hidden = !this.isInRoom;
 
-    document.getElementById('baithak-room-name').textContent = `#${this.roomId}`;
-    const totalCount = this.participants.size + 1;
-    document.getElementById('baithak-user-count').textContent = `${totalCount} ${totalCount === 1 ? 'friend' : 'friends'}`;
+    const roomNameEl = document.getElementById('baithak-room-name');
+    if (roomNameEl) roomNameEl.textContent = `#${this.roomId}`;
 
-    // Update main header button badge
+    const inviteCodeEl = document.getElementById('invite-code-display');
+    if (inviteCodeEl) inviteCodeEl.textContent = this.roomId;
+
+    const totalCount = this.participants.size + 1;
+    const userCountEl = document.getElementById('baithak-user-count');
+    if (userCountEl) userCountEl.textContent = `${totalCount} ${totalCount === 1 ? 'friend' : 'friends'}`;
+
+    // Update main header button
     const headerBtn = document.getElementById('btn-open-baithak');
     if (headerBtn) {
       headerBtn.classList.add('in-room');
       headerBtn.innerHTML = `
-        <span class="live-dot"></span>
+        <span class="live-pulse"></span>
         <span>Baithak #${this.roomId}</span>
       `;
     }
@@ -732,12 +787,33 @@ class BaithakManager {
         vid.srcObject = p.stream;
       }
 
-      // Quick pass button on video tile
       tile.querySelector('.pass-direct-btn')?.addEventListener('click', (e) => {
         e.stopPropagation();
         this.passPipeTo(peerId, p.name);
       });
     });
+
+    // 3. If only host or alone in room, show an inviting placeholder card
+    if (this.participants.size === 0) {
+      const inviteTile = document.createElement('div');
+      inviteTile.className = 'video-tile invite-placeholder-tile';
+      inviteTile.innerHTML = `
+        <div class="invite-tile-content">
+          <span class="invite-tile-icon">➕</span>
+          <span class="invite-tile-text">Invite Friends</span>
+          <span class="invite-tile-sub">Tap to copy link</span>
+        </div>
+      `;
+      inviteTile.addEventListener('click', () => {
+        const url = `${window.location.origin}${window.location.pathname}?room=${this.roomId}`;
+        navigator.clipboard.writeText(url).then(() => {
+          this.showToast('📋 Link copied! Send on WhatsApp or chat.');
+        }).catch(() => {
+          prompt('Copy this Baithak link:', url);
+        });
+      });
+      grid.appendChild(inviteTile);
+    }
   }
 
   _updateTurnBanner() {
@@ -754,7 +830,6 @@ class BaithakManager {
       iconEl.textContent = '🔥';
       textEl.textContent = 'Your turn! Take a drag or pass to a friend.';
 
-      // Generate Pass Options
       if (this.participants.size > 0) {
         const passSelect = document.createElement('select');
         passSelect.className = 'pass-select';
@@ -800,12 +875,12 @@ class BaithakManager {
     const bubble = document.createElement('div');
     bubble.className = 'floating-reaction';
     bubble.innerHTML = `<strong>${author}:</strong> <span>${text}</span>`;
-    bubble.style.left = `${20 + Math.random() * 60}%`;
+    bubble.style.left = `${15 + Math.random() * 65}%`;
     layer.appendChild(bubble);
 
     setTimeout(() => {
       bubble.remove();
-    }, 4000);
+    }, 3800);
   }
 
   showToast(msg) {
@@ -822,7 +897,10 @@ class BaithakManager {
     this.isCamMuted = !this.isCamMuted;
     this.localStream.getVideoTracks().forEach(t => t.enabled = !this.isCamMuted);
     const btn = document.getElementById('btn-toggle-cam');
-    if (btn) btn.classList.toggle('muted', this.isCamMuted);
+    if (btn) {
+      btn.classList.toggle('muted', this.isCamMuted);
+      btn.textContent = this.isCamMuted ? '📹 Cam Off' : '📹 Cam On';
+    }
   }
 
   toggleMic() {
@@ -830,11 +908,15 @@ class BaithakManager {
     this.isMicMuted = !this.isMicMuted;
     this.localStream.getAudioTracks().forEach(t => t.enabled = !this.isMicMuted);
     const btn = document.getElementById('btn-toggle-mic');
-    if (btn) btn.classList.toggle('muted', this.isMicMuted);
+    if (btn) {
+      btn.classList.toggle('muted', this.isMicMuted);
+      btn.textContent = this.isMicMuted ? '🎤 Mic Muted' : '🎤 Mic On';
+    }
   }
 
   leaveRoom() {
     this.isInRoom = false;
+    this.isExpanded = false;
     this.connections.forEach(c => c.close());
     this.mediaCalls.forEach(c => c.close());
     this.connections.clear();
@@ -847,7 +929,10 @@ class BaithakManager {
     }
 
     const dock = document.getElementById('baithak-dock');
-    if (dock) dock.hidden = true;
+    if (dock) {
+      dock.hidden = true;
+      dock.classList.remove('is-expanded');
+    }
 
     const headerBtn = document.getElementById('btn-open-baithak');
     if (headerBtn) {
