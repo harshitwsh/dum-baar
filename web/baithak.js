@@ -886,13 +886,14 @@ class BaithakManager {
     if (this.amIHolder()) {
       banner.className = 'baithak-turn-banner my-turn';
       iconEl.textContent = '🔥';
-      textEl.textContent = 'Your turn! Take a drag or pass to a friend.';
 
       if (this.participants.size > 0) {
+        textEl.textContent = 'Your turn! Take a drag or pass to a friend:';
+
         const passSelect = document.createElement('select');
         passSelect.className = 'pass-select';
         passSelect.innerHTML = `<option value="" disabled selected>Pass pipe to...</option>` +
-          Array.from(this.participants.entries()).map(([pid, p]) => `<option value="${pid}">${p.name}</option>`).join('');
+          Array.from(this.participants.entries()).map(([pid, p]) => `<option value="${pid}">➡️ ${p.name}</option>`).join('');
 
         passSelect.addEventListener('change', (e) => {
           const targetId = e.target.value;
@@ -900,6 +901,37 @@ class BaithakManager {
           this.passPipeTo(targetId, targetName);
         });
         actionsEl.appendChild(passSelect);
+
+        // Quick pass button to first friend
+        const firstEntry = Array.from(this.participants.entries())[0];
+        if (firstEntry) {
+          const quickPassBtn = document.createElement('button');
+          quickPassBtn.type = 'button';
+          quickPassBtn.className = 'btn-request-pipe';
+          quickPassBtn.textContent = `Pass to ${firstEntry[1].name} ➡️`;
+          quickPassBtn.addEventListener('click', () => {
+            this.passPipeTo(firstEntry[0], firstEntry[1].name);
+          });
+          actionsEl.appendChild(quickPassBtn);
+        }
+      } else {
+        textEl.textContent = 'You hold the pipe! Drag with mouse or hold Space to smoke.';
+
+        const passGuidance = document.createElement('div');
+        passGuidance.className = 'pass-guidance';
+        passGuidance.style.width = '100%';
+        passGuidance.innerHTML = `
+          <div style="font-size:11px;color:#737367;line-height:1.4;margin:3px 0 6px;">
+            👥 <strong>How to pass pipe:</strong> Share your room link with friends. When a friend joins, a <strong>"Pass Pipe ➡️"</strong> button appears right here and on their video!
+          </div>
+          <button type="button" class="btn btn-cta btn-pass-share" style="width:100%;font-size:11px;padding:6px 12px;border-radius:999px;">
+            📋 Copy Invite Link to Send Friend
+          </button>
+        `;
+        passGuidance.querySelector('.btn-pass-share')?.addEventListener('click', () => {
+          document.getElementById('btn-copy-invite')?.click();
+        });
+        actionsEl.appendChild(passGuidance);
       }
     } else if (this.pipeHolderId && this.pipeHolderId !== 'none') {
       banner.className = 'baithak-turn-banner other-turn';
