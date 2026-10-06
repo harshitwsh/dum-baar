@@ -41,12 +41,17 @@ class BaithakManager {
   }
 
   _dismissIntroSheet() {
+    const startInteractiveBtn = document.getElementById('start-interactive');
+    if (startInteractiveBtn) {
+      try { startInteractiveBtn.click(); } catch (_) {}
+    }
     const intro = document.getElementById('intro');
-    if (intro && !intro.hidden) {
+    if (intro) {
       intro.classList.add('leaving');
-      setTimeout(() => {
-        intro.hidden = true;
-      }, 380);
+      intro.style.pointerEvents = 'none';
+      intro.hidden = true;
+      intro.setAttribute('hidden', '');
+      intro.style.display = 'none';
     }
     const coach = document.getElementById('coach');
     if (coach) coach.hidden = false;
@@ -110,8 +115,10 @@ class BaithakManager {
     // 2. In-Call Video Lounge Dock
     const videoDock = document.createElement('aside');
     videoDock.id = 'baithak-dock';
-    videoDock.className = 'baithak-dock';
+    videoDock.className = 'baithak-dock is-hidden';
     videoDock.hidden = true;
+    videoDock.setAttribute('hidden', '');
+    videoDock.style.display = 'none';
     videoDock.innerHTML = `
       <div class="baithak-dock-card">
         <!-- Top Bar -->
@@ -300,7 +307,20 @@ class BaithakManager {
       baithakBtn.addEventListener('click', () => {
         if (this.isInRoom) {
           const dock = document.getElementById('baithak-dock');
-          if (dock) dock.hidden = !dock.hidden;
+          if (dock) {
+            const isCurrentlyHidden = dock.hidden || dock.classList.contains('is-hidden') || dock.style.display === 'none';
+            if (isCurrentlyHidden) {
+              dock.hidden = false;
+              dock.removeAttribute('hidden');
+              dock.classList.remove('is-hidden');
+              dock.style.display = 'flex';
+            } else {
+              dock.hidden = true;
+              dock.setAttribute('hidden', '');
+              dock.classList.add('is-hidden');
+              dock.style.display = 'none';
+            }
+          }
         } else {
           this.openModal();
         }
@@ -364,14 +384,14 @@ class BaithakManager {
     this.pipeHolderId = 'self';
     this.pipeHolderName = this.myName;
 
+    this.closeModal();
+    this._dismissIntroSheet();
     this.showToast(`Starting Baithak #${this.roomId}...`);
     await this._getMediaStream();
 
     const hostPeerId = `dumbaar-${this.roomId.toLowerCase()}-host`;
     this._initPeer(hostPeerId, () => {
       this.isInRoom = true;
-      this.closeModal();
-      this._dismissIntroSheet();
       this._updateRoomUI();
       this.showToast(`🔥 Baithak #${this.roomId} started! Share link with friends.`);
       window.history.pushState(null, '', `?room=${this.roomId}`);
@@ -388,6 +408,8 @@ class BaithakManager {
     this.roomId = roomId.toUpperCase().trim();
     this.isHost = false;
 
+    this.closeModal();
+    this._dismissIntroSheet();
     this.showToast(`Entering Baithak #${this.roomId}...`);
     await this._getMediaStream();
 
@@ -397,8 +419,6 @@ class BaithakManager {
 
     this._initPeer(guestPeerId, () => {
       this.isInRoom = true;
-      this.closeModal();
-      this._dismissIntroSheet();
       this._updateRoomUI();
       window.history.pushState(null, '', `?room=${this.roomId}`);
 
@@ -719,7 +739,17 @@ class BaithakManager {
   _updateRoomUI() {
     const dock = document.getElementById('baithak-dock');
     if (!dock) return;
-    dock.hidden = !this.isInRoom;
+    if (this.isInRoom) {
+      dock.hidden = false;
+      dock.removeAttribute('hidden');
+      dock.classList.remove('is-hidden');
+      dock.style.display = 'flex';
+    } else {
+      dock.hidden = true;
+      dock.setAttribute('hidden', '');
+      dock.classList.add('is-hidden');
+      dock.style.display = 'none';
+    }
 
     const roomNameEl = document.getElementById('baithak-room-name');
     if (roomNameEl) roomNameEl.textContent = `#${this.roomId}`;
@@ -931,6 +961,9 @@ class BaithakManager {
     const dock = document.getElementById('baithak-dock');
     if (dock) {
       dock.hidden = true;
+      dock.setAttribute('hidden', '');
+      dock.classList.add('is-hidden');
+      dock.style.display = 'none';
       dock.classList.remove('is-expanded');
     }
 
