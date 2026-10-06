@@ -290,6 +290,16 @@ class BaithakManager {
       });
     });
 
+    // Automatically claim the pipe if it's resting free on the table when clicking the hookah canvas
+    const stage = document.getElementById('stage');
+    if (stage) {
+      stage.addEventListener('pointerdown', () => {
+        if (this.isInRoom && !this.amIHolder() && (!this.pipeHolderId || this.pipeHolderId === 'none' || this.participants.size === 0)) {
+          this.grabPipe();
+        }
+      });
+    }
+
     // Add Baithak button in main header top-actions if not present
     const topActions = document.querySelector('.top-actions');
     if (topActions && !document.getElementById('btn-open-baithak')) {
@@ -388,6 +398,7 @@ class BaithakManager {
 
     this.closeModal();
     this._dismissIntroSheet();
+    this._setPipeHolder('self', this.myName);
     this.showToast(`Starting Baithak #${this.roomId}...`);
     await this._getMediaStream();
 
@@ -663,7 +674,11 @@ class BaithakManager {
   // --- Pipe Sharing Logic ---
 
   amIHolder() {
-    return this.pipeHolderId === 'self';
+    if (!this.isInRoom) return true;
+    if (this.pipeHolderId === 'self') return true;
+    if (this.participants.size === 0) return true;
+    if (!this.pipeHolderId || this.pipeHolderId === 'none') return true;
+    return false;
   }
 
   getRemoteDrawState() {
@@ -729,7 +744,15 @@ class BaithakManager {
   }
 
   grabPipe() {
-    this.passPipeTo(this.myPeerId, this.myName);
+    this._setPipeHolder('self', this.myName);
+    if (this.isInRoom && this.peer) {
+      this._broadcast({
+        type: 'PASS_PIPE',
+        targetPeerId: this.myPeerId,
+        targetName: this.myName
+      });
+    }
+    this.showToast("🔥 You picked up the pipe!");
   }
 
   _setPipeHolder(holderId, holderName) {
