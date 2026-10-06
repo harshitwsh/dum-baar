@@ -208,8 +208,47 @@ class HookahAudio {
     osc.stop(now + 0.45);
   }
 
-  // Play reaction sound bites (async to guarantee AudioContext is running)
+  // Speak the exact reaction words out loud via Web Speech Synthesis API
+  speakReaction(text) {
+    if (!('speechSynthesis' in window)) return;
+    try {
+      window.speechSynthesis.cancel();
+
+      // Clean out emojis to speak pure clear words (e.g. "🗣️ Bhai Pass Kar!" -> "Bhai pass kar!")
+      let spoken = String(text)
+        .replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+        .trim();
+
+      if (!spoken) spoken = text;
+
+      const utterance = new SpeechSynthesisUtterance(spoken);
+      utterance.volume = 1.0;
+      utterance.rate = 1.04;
+      utterance.pitch = 1.08;
+
+      const voices = window.speechSynthesis.getVoices();
+      if (voices && voices.length > 0) {
+        const preferred = voices.find(v => /hi[-_]IN|en[-_]IN/i.test(v.lang))
+          || voices.find(v => /^hi/i.test(v.lang))
+          || voices.find(v => /^en/i.test(v.lang))
+          || voices[0];
+        if (preferred) {
+          utterance.voice = preferred;
+          utterance.lang = preferred.lang;
+        }
+      }
+
+      window.speechSynthesis.speak(utterance);
+    } catch (e) {
+      console.warn("Speech synthesis error:", e);
+    }
+  }
+
+  // Play reaction sound bites & speak the exact words
   async playReactionSound(type = 'default') {
+    // 1. Speak the exact message words out loud
+    this.speakReaction(type);
+
     if (!this.ctx) {
       this.init();
     }
@@ -361,3 +400,13 @@ document.addEventListener('pointerdown', activateAudio);
 document.addEventListener('click', activateAudio);
 document.addEventListener('touchstart', activateAudio);
 document.addEventListener('keydown', activateAudio);
+
+// Preload speech synthesis voices
+if ('speechSynthesis' in window) {
+  try {
+    window.speechSynthesis.onvoiceschanged = () => {
+      try { window.speechSynthesis.getVoices(); } catch (_) {}
+    };
+    window.speechSynthesis.getVoices();
+  } catch (_) {}
+}
