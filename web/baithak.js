@@ -182,6 +182,36 @@ class BaithakManager {
     `;
     document.body.appendChild(videoDock);
 
+    // 2b. Center Screen Active Smoker Spotlight Stage
+    const centerStage = document.createElement('div');
+    centerStage.id = 'baithak-center-stage';
+    centerStage.className = 'baithak-center-stage is-hidden';
+    centerStage.setAttribute('hidden', '');
+    centerStage.innerHTML = `
+      <div class="smoker-spotlight-card">
+        <div class="smoker-spotlight-header">
+          <span class="spotlight-pulse"></span>
+          <span id="smoker-stage-title" class="spotlight-title">Baithak Spotlight</span>
+          <span id="smoker-stage-badge" class="spotlight-badge">💨 In Session</span>
+        </div>
+        <div class="smoker-video-box">
+          <video id="smoker-stage-video" autoplay playsinline muted></video>
+          <div id="smoker-stage-fallback" class="smoker-stage-fallback" style="display:none;">
+            <span class="fallback-avatar">💨</span>
+            <span id="smoker-fallback-name" class="fallback-name">Friend</span>
+          </div>
+          <div class="smoker-video-overlay">
+            <span id="smoker-stage-name" class="smoker-current-name">Waiting...</span>
+            <span id="smoker-stage-status" class="smoker-current-status">Holding Pipe</span>
+          </div>
+        </div>
+        <div id="smoker-stage-actions" class="smoker-stage-actions">
+          <!-- Member pass buttons or 'Bhai Pass Kar!' button -->
+        </div>
+      </div>
+    `;
+    document.body.appendChild(centerStage);
+
     // 3. Floating Reactions Layer
     const reactionsLayer = document.createElement('div');
     reactionsLayer.id = 'baithak-reactions-layer';
@@ -627,9 +657,12 @@ class BaithakManager {
         break;
 
       case 'REQUEST_PIPE':
-        this.showToast(`🙋‍♂️ ${data.fromName} requested the pipe next!`);
+        this.showToast(`🗣️ ${data.fromName}: Bhai Pass Kar!`);
+        try { window.hookahAudio?.playReactionSound('🗣️ Bhai Pass Kar!'); } catch (_) {}
+        this._showFloatingReaction('🗣️ Bhai Pass Kar!', data.fromName);
         if (this.amIHolder()) {
           this._updateTurnBanner();
+          this._renderCenterStage();
         }
         break;
 
@@ -736,7 +769,8 @@ class BaithakManager {
 
   requestPipe() {
     if (this.amIHolder()) return;
-    this.showToast("🙋‍♂️ You requested the pipe next!");
+    this.sendReaction('🗣️ Bhai Pass Kar!');
+    this.showToast("🗣️ Bhai Pass Kar! Sent request to get the pipe back.");
     this._broadcast({
       type: 'REQUEST_PIPE',
       fromName: this.myName
@@ -760,23 +794,37 @@ class BaithakManager {
     this.pipeHolderName = holderName || this.myName;
     this._renderVideoTiles();
     this._updateTurnBanner();
+    this._renderCenterStage();
   }
 
   // --- UI Rendering ---
 
   _updateRoomUI() {
     const dock = document.getElementById('baithak-dock');
+    const stage = document.getElementById('baithak-center-stage');
     if (!dock) return;
     if (this.isInRoom) {
       dock.hidden = false;
       dock.removeAttribute('hidden');
       dock.classList.remove('is-hidden');
       dock.style.display = 'flex';
+      if (stage) {
+        stage.hidden = false;
+        stage.removeAttribute('hidden');
+        stage.classList.remove('is-hidden');
+        stage.style.display = 'block';
+      }
     } else {
       dock.hidden = true;
       dock.setAttribute('hidden', '');
       dock.classList.add('is-hidden');
       dock.style.display = 'none';
+      if (stage) {
+        stage.hidden = true;
+        stage.setAttribute('hidden', '');
+        stage.classList.add('is-hidden');
+        stage.style.display = 'none';
+      }
     }
 
     const roomNameEl = document.getElementById('baithak-room-name');
@@ -801,6 +849,7 @@ class BaithakManager {
 
     this._renderVideoTiles();
     this._updateTurnBanner();
+    this._renderCenterStage();
   }
 
   _renderVideoTiles() {
@@ -872,6 +921,153 @@ class BaithakManager {
       });
       grid.appendChild(inviteTile);
     }
+
+    this._renderCenterStage();
+  }
+
+  _renderCenterStage() {
+    const stage = document.getElementById('baithak-center-stage');
+    if (!stage) return;
+    if (!this.isInRoom) {
+      stage.hidden = true;
+      stage.setAttribute('hidden', '');
+      stage.classList.add('is-hidden');
+      stage.style.display = 'none';
+      return;
+    }
+
+    stage.hidden = false;
+    stage.removeAttribute('hidden');
+    stage.classList.remove('is-hidden');
+    stage.style.display = 'block';
+
+    const titleEl = document.getElementById('smoker-stage-title');
+    const badgeEl = document.getElementById('smoker-stage-badge');
+    const nameEl = document.getElementById('smoker-stage-name');
+    const statusEl = document.getElementById('smoker-stage-status');
+    const videoEl = document.getElementById('smoker-stage-video');
+    const fallbackEl = document.getElementById('smoker-stage-fallback');
+    const fallbackNameEl = document.getElementById('smoker-fallback-name');
+    const actionsEl = document.getElementById('smoker-stage-actions');
+
+    if (!actionsEl) return;
+    actionsEl.innerHTML = '';
+
+    if (this.amIHolder()) {
+      if (titleEl) titleEl.textContent = '🔥 Your Turn (You have the Pipe)';
+      if (badgeEl) {
+        badgeEl.textContent = 'Active Smoker';
+        badgeEl.className = 'spotlight-badge active-self';
+      }
+      if (nameEl) nameEl.textContent = `${this.myName} (You)`;
+      if (statusEl) statusEl.textContent = '💨 Take a drag or pass control below';
+
+      if (videoEl && this.localStream) {
+        videoEl.style.display = 'block';
+        if (fallbackEl) fallbackEl.style.display = 'none';
+        videoEl.muted = true;
+        if (videoEl.srcObject !== this.localStream) {
+          videoEl.srcObject = this.localStream;
+        }
+      } else if (fallbackEl) {
+        if (videoEl) videoEl.style.display = 'none';
+        fallbackEl.style.display = 'flex';
+        if (fallbackNameEl) fallbackNameEl.textContent = `${this.myName} (You)`;
+      }
+
+      if (this.participants.size > 0) {
+        const passPrompt = document.createElement('div');
+        passPrompt.className = 'stage-pass-prompt';
+        passPrompt.innerHTML = `<span>Pass Hookah Controls to:</span>`;
+        actionsEl.appendChild(passPrompt);
+
+        const memberList = document.createElement('div');
+        memberList.className = 'stage-member-list';
+
+        this.participants.forEach((p, peerId) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-member-pass';
+          btn.innerHTML = `<span class="pass-arrow">➡️</span> <strong>${p.name}</strong>`;
+          btn.title = `Pass hookah control to ${p.name}`;
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.passPipeTo(peerId, p.name);
+          });
+          memberList.appendChild(btn);
+        });
+        actionsEl.appendChild(memberList);
+      } else {
+        const waitingNotice = document.createElement('div');
+        waitingNotice.className = 'stage-waiting-notice';
+        waitingNotice.innerHTML = `
+          <div style="font-size:12px;color:#555550;line-height:1.4;margin-bottom:6px;">
+            You hold the pipe! Drag on canvas or hold Space to smoke.
+          </div>
+          <button type="button" class="btn-stage-copy-link">
+            📋 Copy Invite Link for Friends
+          </button>
+        `;
+        waitingNotice.querySelector('.btn-stage-copy-link')?.addEventListener('click', () => {
+          document.getElementById('btn-copy-invite')?.click();
+        });
+        actionsEl.appendChild(waitingNotice);
+      }
+    } else if (this.pipeHolderId && this.pipeHolderId !== 'none') {
+      const smokerName = this.pipeHolderName || 'Friend';
+      if (titleEl) titleEl.textContent = `💨 ${smokerName} is Smoking`;
+      if (badgeEl) {
+        badgeEl.textContent = 'Smoking Now';
+        badgeEl.className = 'spotlight-badge active-friend';
+      }
+      if (nameEl) nameEl.textContent = smokerName;
+      if (statusEl) statusEl.textContent = '🔥 Taking Dum...';
+
+      const friendParticipant = this.participants.get(this.pipeHolderId);
+      if (videoEl && friendParticipant?.stream) {
+        videoEl.style.display = 'block';
+        if (fallbackEl) fallbackEl.style.display = 'none';
+        videoEl.muted = false;
+        if (videoEl.srcObject !== friendParticipant.stream) {
+          videoEl.srcObject = friendParticipant.stream;
+        }
+      } else if (fallbackEl) {
+        if (videoEl) videoEl.style.display = 'none';
+        fallbackEl.style.display = 'flex';
+        if (fallbackNameEl) fallbackNameEl.textContent = smokerName;
+      }
+
+      const reqBtn = document.createElement('button');
+      reqBtn.type = 'button';
+      reqBtn.className = 'btn-hero-pass-request';
+      reqBtn.innerHTML = `🗣️ Bhai Pass Kar! <span class="req-sub">(Ask turn back)</span>`;
+      reqBtn.addEventListener('click', () => {
+        this.requestPipe();
+      });
+      actionsEl.appendChild(reqBtn);
+    } else {
+      if (titleEl) titleEl.textContent = '🫖 Pipe is on the Table';
+      if (badgeEl) {
+        badgeEl.textContent = 'Available';
+        badgeEl.className = 'spotlight-badge';
+      }
+      if (nameEl) nameEl.textContent = 'Dum Baar';
+      if (statusEl) statusEl.textContent = 'Pipe is resting. Grab to smoke';
+      if (fallbackEl) {
+        if (videoEl) videoEl.style.display = 'none';
+        fallbackEl.style.display = 'flex';
+        if (fallbackNameEl) fallbackNameEl.textContent = 'Hookah Ready';
+      }
+
+      const grabBtn = document.createElement('button');
+      grabBtn.type = 'button';
+      grabBtn.className = 'btn-hero-pass-request';
+      grabBtn.textContent = '🔥 Pick Up Pipe (Take Turn)';
+      grabBtn.addEventListener('click', () => {
+        this.grabPipe();
+      });
+      actionsEl.appendChild(grabBtn);
+    }
   }
 
   _updateTurnBanner() {
@@ -888,32 +1084,23 @@ class BaithakManager {
       iconEl.textContent = '🔥';
 
       if (this.participants.size > 0) {
-        textEl.textContent = 'Your turn! Take a drag or pass to a friend:';
+        textEl.textContent = 'Your turn! Pass hookah control to:';
 
-        const passSelect = document.createElement('select');
-        passSelect.className = 'pass-select';
-        passSelect.innerHTML = `<option value="" disabled selected>Pass pipe to...</option>` +
-          Array.from(this.participants.entries()).map(([pid, p]) => `<option value="${pid}">➡️ ${p.name}</option>`).join('');
-
-        passSelect.addEventListener('change', (e) => {
-          const targetId = e.target.value;
-          const targetName = this.participants.get(targetId)?.name || 'Friend';
-          this.passPipeTo(targetId, targetName);
-        });
-        actionsEl.appendChild(passSelect);
-
-        // Quick pass button to first friend
-        const firstEntry = Array.from(this.participants.entries())[0];
-        if (firstEntry) {
-          const quickPassBtn = document.createElement('button');
-          quickPassBtn.type = 'button';
-          quickPassBtn.className = 'btn-request-pipe';
-          quickPassBtn.textContent = `Pass to ${firstEntry[1].name} ➡️`;
-          quickPassBtn.addEventListener('click', () => {
-            this.passPipeTo(firstEntry[0], firstEntry[1].name);
+        const memberChips = document.createElement('div');
+        memberChips.className = 'banner-member-chips';
+        this.participants.forEach((p, pid) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'btn-member-pass-chip';
+          btn.innerHTML = `<span>➡️</span> <strong>${p.name}</strong>`;
+          btn.title = `Pass hookah control to ${p.name}`;
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            this.passPipeTo(pid, p.name);
           });
-          actionsEl.appendChild(quickPassBtn);
-        }
+          memberChips.appendChild(btn);
+        });
+        actionsEl.appendChild(memberChips);
       } else {
         textEl.textContent = 'You hold the pipe! Drag with mouse or hold Space to smoke.';
 
@@ -922,7 +1109,7 @@ class BaithakManager {
         passGuidance.style.width = '100%';
         passGuidance.innerHTML = `
           <div style="font-size:11px;color:#737367;line-height:1.4;margin:3px 0 6px;">
-            👥 <strong>How to pass pipe:</strong> Share your room link with friends. When a friend joins, a <strong>"Pass Pipe ➡️"</strong> button appears right here and on their video!
+            👥 <strong>How to pass pipe:</strong> Share your room link with friends. When a friend joins, a <strong>"Pass Pipe ➡️"</strong> button appears right here and in the spotlight!
           </div>
           <button type="button" class="btn btn-cta btn-pass-share" style="width:100%;font-size:11px;padding:6px 12px;border-radius:999px;">
             📋 Copy Invite Link to Send Friend
@@ -940,8 +1127,8 @@ class BaithakManager {
 
       const reqBtn = document.createElement('button');
       reqBtn.type = 'button';
-      reqBtn.className = 'btn-request-pipe';
-      reqBtn.textContent = 'Request Next 🙋‍♂️';
+      reqBtn.className = 'btn-request-pipe btn-bhai-pass';
+      reqBtn.textContent = '🗣️ Bhai Pass Kar!';
       reqBtn.addEventListener('click', () => this.requestPipe());
       actionsEl.appendChild(reqBtn);
     } else {
