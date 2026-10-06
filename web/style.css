@@ -1477,6 +1477,10 @@ html, body {
   border: 2px solid var(--ember);
   box-shadow: 0 0 14px rgba(217, 107, 39, 0.45);
 }
+.video-tile.is-speaking {
+  box-shadow: 0 0 0 2.5px #10B981, 0 0 18px rgba(16, 185, 129, 0.7) !important;
+  border-color: #10B981 !important;
+}
 
 .video-overlay {
   position: absolute;
@@ -1484,12 +1488,19 @@ html, body {
   right: 0;
   bottom: 0;
   padding: 6px 9px;
-  background: linear-gradient(to top, rgba(25, 25, 25, 0.85) 0%, transparent 100%);
+  background: linear-gradient(to top, rgba(25, 25, 25, 0.88) 0%, transparent 100%);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 6px;
   color: var(--ivory);
+}
+.tile-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  max-width: 65%;
 }
 .tile-name {
   font-size: 11px;
@@ -1498,6 +1509,39 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.tile-mic-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  font-size: 10px;
+  border-radius: 999px;
+  background: rgba(30, 30, 30, 0.7);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  flex-shrink: 0;
+  transition: all 0.18s ease;
+}
+.tile-mic-badge.active {
+  background: rgba(16, 185, 129, 0.35);
+  border-color: rgba(16, 185, 129, 0.7);
+  color: #10B981;
+}
+.tile-mic-badge.muted {
+  background: rgba(239, 68, 68, 0.45);
+  border-color: rgba(239, 68, 68, 0.8);
+  color: #FCA5A5;
+}
+.video-tile.is-speaking .tile-mic-badge.active {
+  animation: mic-speak-pulse 0.7s infinite alternate;
+  background: #10B981;
+  color: #FFFFFF;
+}
+@keyframes mic-speak-pulse {
+  from { transform: scale(1); }
+  to { transform: scale(1.22); }
 }
 .pipe-badge {
   font-size: 9px;
@@ -1509,6 +1553,7 @@ html, body {
   padding: 2px 6px;
   border-radius: 999px;
   border: 1px solid var(--ember);
+  flex-shrink: 0;
 }
 .pass-direct-btn {
   position: absolute;

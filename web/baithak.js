@@ -21,9 +21,45 @@ class BaithakManager {
     this.remoteDrawState = null;
     this.isCamMuted = false;
     this.isMicMuted = false;
+    this._pendingAudioElements = new Set();
+    this.audioCtx = null;
+    this._audioAnalysers = new Map();
+    this._localAnalyser = null;
+    this._vadInterval = null;
 
     this._initUI();
+    this._initAudioUnlocker();
     this._checkURLRoom();
+  }
+
+  _initAudioUnlocker() {
+    const unlock = () => {
+      if (this._pendingAudioElements && this._pendingAudioElements.size > 0) {
+        this._pendingAudioElements.forEach(el => {
+          el.play().catch(() => {});
+        });
+        this._pendingAudioElements.clear();
+      }
+      if (this.audioCtx && this.audioCtx.state === 'suspended') {
+        this.audioCtx.resume().catch(() => {});
+      }
+    };
+    ['click', 'touchstart', 'pointerdown', 'keydown'].forEach(evt => {
+      document.addEventListener(evt, unlock, { passive: true });
+    });
+  }
+
+  _getAudioContext() {
+    if (!this.audioCtx) {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      if (AudioCtx) {
+        this.audioCtx = new AudioCtx();
+      }
+    }
+    if (this.audioCtx && this.audioCtx.state === 'suspended') {
+      this.audioCtx.resume().catch(() => {});
+    }
+    return this.audioCtx;
   }
 
   _initUI() {
@@ -535,7 +571,13 @@ class BaithakManager {
   }
 
   async _getMediaStream() {
-    if (this.localStream) return this.localStream;
+    // If localStream already has active audio, return it
+    if (this.localStream) {
+      const audioTracks = this.localStream.getAudioTracks();
+      if (audioTracks.length > 0 && audioTracks[0].readyState === 'live') {
+        return this.localStream;
+      }
+    }
 
     const camEl = document.getElementById('cam');
     let videoTrack = null;
@@ -550,13 +592,36 @@ class BaithakManager {
 
     let audioTrack = null;
     try {
-      // Request mic audio only so the camera device is never restarted or interrupted
+      // Request mic audio with echo cancellation & noise suppression
       const audioStream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: true, noiseSuppression: true }
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        }
       });
       audioTrack = audioStream.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !this.isMicMuted;
+      }
     } catch (e) {
       console.warn("Microphone access unavailable or denied:", e);
+    }
+
+    if (this.localStream) {
+      if (audioTrack) {
+        this.localStream.addTrack(audioTrack);
+        this._setupLocalAudioAnalyser();
+        // Add to active media calls
+        this.mediaCalls.forEach(call => {
+          if (call.peerConnection) {
+            try {
+              call.peerConnection.addTrack(audioTrack, this.localStream);
+            } catch (_) {}
+          }
+        });
+      }
+      return this.localStream;
     }
 
     if (videoTrack) {
@@ -568,8 +633,11 @@ class BaithakManager {
       try {
         this.localStream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-          audio: { echoCancellation: true, noiseSuppression: true }
+          audio: audioTrack ? false : { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
         });
+        if (audioTrack) {
+          this.localStream.addTrack(audioTrack);
+        }
         if (camEl && (!camEl.srcObject || !camEl.srcObject.active)) {
           camEl.srcObject = this.localStream;
           camEl.play().catch(() => {});
@@ -577,7 +645,13 @@ class BaithakManager {
       } catch (err) {
         console.warn("Could not acquire camera+mic, falling back:", err);
         try {
-          this.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+          if (audioTrack) {
+            this.localStream = new MediaStream([audioTrack]);
+          } else {
+            this.localStream = await navigator.mediaDevices.getUserMedia({
+              audio: { echoCancellation: true, noiseSuppression: true }
+            });
+          }
         } catch (_) {
           const canvas = document.createElement('canvas');
           canvas.width = 160; canvas.height = 120;
@@ -587,7 +661,191 @@ class BaithakManager {
         }
       }
     }
+
+    this._setupLocalAudioAnalyser();
     return this.localStream;
+  }
+
+  _setupLocalAudioAnalyser() {
+    if (!this.localStream) return;
+    const audioTracks = this.localStream.getAudioTracks();
+    if (audioTracks.length === 0) return;
+    try {
+      const ctx = this._getAudioContext();
+      if (!ctx) return;
+      const localAudioStream = new MediaStream([audioTracks[0]]);
+      const source = ctx.createMediaStreamSource(localAudioStream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      this._localAnalyser = { analyser, dataArray, isSpeaking: false, lastSpoke: 0 };
+      if (!this._vadInterval) {
+        this._startVadLoop();
+      }
+    } catch (e) {
+      console.warn("Could not setup local VAD:", e);
+    }
+  }
+
+  _attachRemoteAudio(peerId, remoteStream) {
+    let container = document.getElementById('baithak-audio-streams');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'baithak-audio-streams';
+      container.setAttribute('aria-hidden', 'true');
+      container.style.cssText = 'position:fixed;width:0;height:0;overflow:hidden;pointer-events:none;opacity:0;';
+      document.body.appendChild(container);
+    }
+
+    let audioEl = document.getElementById(`baithak-audio-${peerId}`);
+    if (!audioEl) {
+      audioEl = document.createElement('audio');
+      audioEl.id = `baithak-audio-${peerId}`;
+      audioEl.autoplay = true;
+      audioEl.playsInline = true;
+      audioEl.muted = false; // Remote audio must be clearly audible
+      audioEl.volume = 1.0;
+      container.appendChild(audioEl);
+    }
+
+    if (audioEl.srcObject !== remoteStream) {
+      audioEl.srcObject = remoteStream;
+    }
+
+    const playPromise = audioEl.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(err => {
+        console.warn(`[Baithak Audio] Autoplay waiting for user gesture for ${peerId}:`, err);
+        if (!this._pendingAudioElements) this._pendingAudioElements = new Set();
+        this._pendingAudioElements.add(audioEl);
+      });
+    }
+
+    const p = this.participants.get(peerId);
+    if (p) {
+      p._audioEl = audioEl;
+    }
+  }
+
+  _removeRemoteAudio(peerId) {
+    const audioEl = document.getElementById(`baithak-audio-${peerId}`);
+    if (audioEl) {
+      try {
+        audioEl.pause();
+        audioEl.srcObject = null;
+        audioEl.remove();
+      } catch (_) {}
+    }
+    if (this._pendingAudioElements && audioEl) {
+      this._pendingAudioElements.delete(audioEl);
+    }
+    if (this._audioAnalysers && this._audioAnalysers.has(peerId)) {
+      this._audioAnalysers.delete(peerId);
+    }
+    this._setTileSpeakingState(peerId, false);
+  }
+
+  _monitorAudioActivity(peerId, stream) {
+    const ctx = this._getAudioContext();
+    if (!ctx) return;
+    try {
+      const audioTracks = stream.getAudioTracks();
+      if (!audioTracks || audioTracks.length === 0) return;
+
+      if (!this._audioAnalysers) this._audioAnalysers = new Map();
+      if (this._audioAnalysers.has(peerId)) return;
+
+      const source = ctx.createMediaStreamSource(stream);
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.5;
+      source.connect(analyser);
+
+      const dataArray = new Uint8Array(analyser.frequencyBinCount);
+      this._audioAnalysers.set(peerId, { analyser, dataArray, isSpeaking: false, lastSpoke: 0 });
+
+      if (!this._vadInterval) {
+        this._startVadLoop();
+      }
+    } catch (e) {
+      console.warn("VAD monitoring error for", peerId, e);
+    }
+  }
+
+  _startVadLoop() {
+    this._vadInterval = setInterval(() => {
+      if (!this.isInRoom) return;
+      const now = performance.now();
+
+      // 1. Remote peers voice activity
+      if (this._audioAnalysers) {
+        this._audioAnalysers.forEach((entry, peerId) => {
+          entry.analyser.getByteFrequencyData(entry.dataArray);
+          let sum = 0;
+          for (let i = 0; i < entry.dataArray.length; i++) {
+            sum += entry.dataArray[i];
+          }
+          const avg = sum / entry.dataArray.length;
+          const wasSpeaking = entry.isSpeaking;
+          const isSpeaking = avg > 12; // Voice presence threshold
+          if (isSpeaking) {
+            entry.lastSpoke = now;
+            entry.isSpeaking = true;
+          } else if (now - entry.lastSpoke > 400) {
+            entry.isSpeaking = false;
+          }
+
+          if (wasSpeaking !== entry.isSpeaking) {
+            this._setTileSpeakingState(peerId, entry.isSpeaking);
+          }
+        });
+      }
+
+      // 2. Local user speaking activity
+      if (this._localAnalyser && !this.isMicMuted) {
+        this._localAnalyser.analyser.getByteFrequencyData(this._localAnalyser.dataArray);
+        let sum = 0;
+        for (let i = 0; i < this._localAnalyser.dataArray.length; i++) {
+          sum += this._localAnalyser.dataArray[i];
+        }
+        const avg = sum / this._localAnalyser.dataArray.length;
+        const wasSpeaking = this._localAnalyser.isSpeaking;
+        const isSpeaking = avg > 12;
+        if (isSpeaking) {
+          this._localAnalyser.lastSpoke = now;
+          this._localAnalyser.isSpeaking = true;
+        } else if (now - this._localAnalyser.lastSpoke > 400) {
+          this._localAnalyser.isSpeaking = false;
+        }
+
+        if (wasSpeaking !== this._localAnalyser.isSpeaking) {
+          this._setTileSpeakingState('self', this._localAnalyser.isSpeaking);
+        }
+      }
+    }, 100);
+  }
+
+  _setTileSpeakingState(peerId, isSpeaking) {
+    const tile = peerId === 'self'
+      ? document.querySelector('.video-tile.self-tile')
+      : document.querySelector(`.video-tile[data-peer-id="${peerId}"]`);
+    if (tile) {
+      tile.classList.toggle('is-speaking', isSpeaking);
+    }
+  }
+
+  _updateParticipantMicBadge(peerId, isMuted) {
+    const tile = document.querySelector(`.video-tile[data-peer-id="${peerId}"]`);
+    if (tile) {
+      const badge = tile.querySelector('.tile-mic-badge');
+      if (badge) {
+        badge.className = `tile-mic-badge ${isMuted ? 'muted' : 'active'}`;
+        badge.textContent = isMuted ? '🔇' : '🎤';
+        badge.title = isMuted ? 'Mic Muted' : 'Mic Live';
+      }
+    }
   }
 
   // 1. Create Room (Host)
@@ -686,8 +944,9 @@ class BaithakManager {
       this._handleConnection(conn);
     });
 
-    this.peer.on('call', (call) => {
-      call.answer(this.localStream);
+    this.peer.on('call', async (call) => {
+      const stream = await this._getMediaStream();
+      call.answer(stream);
       this._handleCall(call);
     });
   }
@@ -699,16 +958,17 @@ class BaithakManager {
       this.connections.set(remotePeerId, conn);
 
       if (!this.participants.has(remotePeerId)) {
-        this.participants.set(remotePeerId, { name: remoteName, isHolder: false });
+        this.participants.set(remotePeerId, { name: remoteName, isHolder: false, isMicMuted: false });
         this._renderVideoTiles();
       }
 
       if (this.isHost) {
         const participantsList = Array.from(this.participants.entries()).map(([pid, p]) => ({
           peerId: pid,
-          name: p.name
+          name: p.name,
+          isMicMuted: !!p.isMicMuted
         }));
-        participantsList.push({ peerId: this.myPeerId, name: this.myName });
+        participantsList.push({ peerId: this.myPeerId, name: this.myName, isMicMuted: this.isMicMuted });
 
         conn.send({
           type: 'SYNC_STATE',
@@ -746,25 +1006,32 @@ class BaithakManager {
     this.mediaCalls.set(remotePeerId, call);
 
     call.on('stream', (remoteStream) => {
-      const p = this.participants.get(remotePeerId) || { name: call.metadata?.name || 'Friend' };
+      const p = this.participants.get(remotePeerId) || { name: call.metadata?.name || 'Friend', isMicMuted: false };
       p.stream = remoteStream;
-      const vid = document.createElement('video');
-      vid.autoplay = true;
-      vid.playsInline = true;
-      vid.muted = false;
-      vid.srcObject = remoteStream;
-      vid.play().catch(() => {});
-      p._videoEl = vid;
       this.participants.set(remotePeerId, p);
+
+      // 1. Maintain persistent unmuted <audio> element for remote audio playback
+      this._attachRemoteAudio(remotePeerId, remoteStream);
+
+      // 2. Setup speaking activity detector for this peer
+      this._monitorAudioActivity(remotePeerId, remoteStream);
+
       this._renderVideoTiles();
+      this._renderCenterStage();
     });
 
     call.on('close', () => {
+      this._removeRemoteAudio(remotePeerId);
       this._handlePeerDisconnect(remotePeerId);
+    });
+
+    call.on('error', (err) => {
+      console.warn("Media call error with", remotePeerId, err);
     });
   }
 
   _handlePeerDisconnect(peerId) {
+    this._removeRemoteAudio(peerId);
     this.connections.delete(peerId);
     this.mediaCalls.delete(peerId);
     const p = this.participants.get(peerId);
@@ -785,6 +1052,11 @@ class BaithakManager {
   _handleDataMessage(senderPeerId, data) {
     if (!data || !data.type) return;
 
+    // Host forwards data messages to all other connected peers so room stays completely synchronized
+    if (this.isHost) {
+      this._broadcast(data, [senderPeerId]);
+    }
+
     switch (data.type) {
       case 'SYNC_STATE':
         this.pipeHolderId = data.pipeHolderId === this.myPeerId ? 'self' : data.pipeHolderId;
@@ -792,7 +1064,13 @@ class BaithakManager {
         if (data.participants) {
           data.participants.forEach(p => {
             if (p.peerId !== this.myPeerId) {
-              this.participants.set(p.peerId, { name: p.name, isHolder: p.peerId === this.pipeHolderId });
+              const existing = this.participants.get(p.peerId) || {};
+              this.participants.set(p.peerId, {
+                ...existing,
+                name: p.name,
+                isHolder: p.peerId === this.pipeHolderId,
+                isMicMuted: !!p.isMicMuted
+              });
             }
           });
         }
@@ -878,6 +1156,14 @@ class BaithakManager {
         if (window.__hookahScene && data.hookahId) {
           window.__hookahScene.body?.setModel(data.hookahId);
           this.showToast(`🫖 Hookah switched!`);
+        }
+        break;
+
+      case 'MIC_STATUS':
+        const targetP = this.participants.get(data.peerId);
+        if (targetP) {
+          targetP.isMicMuted = data.isMuted;
+          this._updateParticipantMicBadge(data.peerId, data.isMuted);
         }
         break;
     }
@@ -1083,10 +1369,16 @@ class BaithakManager {
     // 1. Self Video Tile
     const selfTile = document.createElement('div');
     selfTile.className = `video-tile self-tile ${this.amIHolder() ? 'is-smoking' : ''}`;
+    selfTile.dataset.peerId = 'self';
     selfTile.innerHTML = `
       <video id="baithak-self-video" autoplay playsinline muted></video>
       <div class="video-overlay">
-        <span class="tile-name">${this.myName} (You)</span>
+        <div class="tile-meta-row">
+          <span class="tile-name">${this.myName} (You)</span>
+          <span class="tile-mic-badge ${this.isMicMuted ? 'muted' : 'active'}" title="${this.isMicMuted ? 'Mic Muted' : 'Mic Live'}">
+            ${this.isMicMuted ? '🔇' : '🎤'}
+          </span>
+        </div>
         ${this.amIHolder() ? '<span class="pipe-badge">🔥 Holding Pipe</span>' : ''}
       </div>
     `;
@@ -1095,17 +1387,25 @@ class BaithakManager {
     const selfVideo = selfTile.querySelector('video');
     if (selfVideo && this.localStream) {
       selfVideo.srcObject = this.localStream;
+      selfVideo.play().catch(() => {});
     }
 
     // 2. Remote Peers Tiles
     this.participants.forEach((p, peerId) => {
       const isHolder = this.pipeHolderId === peerId;
+      const isMicMuted = !!p.isMicMuted;
       const tile = document.createElement('div');
       tile.className = `video-tile remote-tile ${isHolder ? 'is-smoking' : ''}`;
+      tile.dataset.peerId = peerId;
       tile.innerHTML = `
-        <video autoplay playsinline></video>
+        <video autoplay playsinline muted></video>
         <div class="video-overlay">
-          <span class="tile-name">${p.name}</span>
+          <div class="tile-meta-row">
+            <span class="tile-name">${p.name}</span>
+            <span class="tile-mic-badge ${isMicMuted ? 'muted' : 'active'}" title="${isMicMuted ? 'Mic Muted' : 'Mic Live'}">
+              ${isMicMuted ? '🔇' : '🎤'}
+            </span>
+          </div>
           ${isHolder ? '<span class="pipe-badge">🔥 Holding Pipe</span>' : ''}
         </div>
         ${this.amIHolder() ? `<button type="button" class="pass-direct-btn" data-peer="${peerId}" data-name="${p.name}">Pass ➡️</button>` : ''}
@@ -1115,6 +1415,12 @@ class BaithakManager {
       const vid = tile.querySelector('video');
       if (vid && p.stream) {
         vid.srcObject = p.stream;
+        vid.play().catch(() => {});
+      }
+
+      // Ensure persistent unmuted audio is attached for this remote peer
+      if (p.stream) {
+        this._attachRemoteAudio(peerId, p.stream);
       }
 
       tile.querySelector('.pass-direct-btn')?.addEventListener('click', (e) => {
@@ -1250,10 +1556,11 @@ class BaithakManager {
       if (videoEl && friendParticipant?.stream) {
         videoEl.style.display = 'block';
         if (fallbackEl) fallbackEl.style.display = 'none';
-        videoEl.muted = false;
+        videoEl.muted = true; // Video element is muted; audio streams cleanly via dedicated audio element
         if (videoEl.srcObject !== friendParticipant.stream) {
           videoEl.srcObject = friendParticipant.stream;
         }
+        videoEl.play().catch(() => {});
       } else if (fallbackEl) {
         if (videoEl) videoEl.style.display = 'none';
         fallbackEl.style.display = 'flex';
@@ -1403,20 +1710,95 @@ class BaithakManager {
     }
   }
 
-  toggleMic() {
-    if (!this.localStream) return;
+  async toggleMic() {
+    // If localStream doesn't exist or has no audio track, try acquiring it
+    if (!this.localStream || this.localStream.getAudioTracks().length === 0) {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }
+        });
+        const track = stream.getAudioTracks()[0];
+        if (track) {
+          if (!this.localStream) {
+            this.localStream = new MediaStream([track]);
+          } else {
+            this.localStream.addTrack(track);
+          }
+          this._setupLocalAudioAnalyser();
+          this.mediaCalls.forEach(call => {
+            if (call.peerConnection) {
+              try {
+                call.peerConnection.addTrack(track, this.localStream);
+              } catch (_) {}
+            }
+          });
+        }
+      } catch (err) {
+        alert("Microphone permission needed: " + err.message);
+        return;
+      }
+    }
+
     this.isMicMuted = !this.isMicMuted;
-    this.localStream.getAudioTracks().forEach(t => t.enabled = !this.isMicMuted);
+    this.localStream.getAudioTracks().forEach(t => {
+      t.enabled = !this.isMicMuted;
+    });
+
     const btn = document.getElementById('btn-toggle-mic');
     if (btn) {
       btn.classList.toggle('muted', this.isMicMuted);
-      btn.textContent = this.isMicMuted ? '🎤 Mic Muted' : '🎤 Mic On';
+      btn.innerHTML = this.isMicMuted ? '🔇 Mic Muted' : '🎤 Mic On';
     }
+
+    // Update self tile mic badge
+    const selfBadge = document.querySelector('.self-tile .tile-mic-badge');
+    if (selfBadge) {
+      selfBadge.className = `tile-mic-badge ${this.isMicMuted ? 'muted' : 'active'}`;
+      selfBadge.textContent = this.isMicMuted ? '🔇' : '🎤';
+      selfBadge.title = this.isMicMuted ? 'Mic Muted' : 'Mic Live';
+    }
+
+    // Broadcast to room
+    if (this.isInRoom) {
+      this._broadcast({
+        type: 'MIC_STATUS',
+        peerId: this.myPeerId,
+        isMuted: this.isMicMuted
+      });
+    }
+
+    this.showToast(this.isMicMuted ? '🔇 Microphone muted' : '🎤 Microphone live (Friends can hear you)');
   }
 
   leaveRoom() {
     this.isInRoom = false;
     this.isExpanded = false;
+
+    // Stop local audio tracks
+    if (this.localStream) {
+      this.localStream.getAudioTracks().forEach(t => t.stop());
+    }
+
+    // Remove all remote audio elements
+    const audioContainer = document.getElementById('baithak-audio-streams');
+    if (audioContainer) {
+      audioContainer.innerHTML = '';
+      audioContainer.remove();
+    }
+
+    // Stop voice activity detection loop and clear analysers
+    if (this._vadInterval) {
+      clearInterval(this._vadInterval);
+      this._vadInterval = null;
+    }
+    if (this._audioAnalysers) {
+      this._audioAnalysers.clear();
+    }
+    this._localAnalyser = null;
+    if (this._pendingAudioElements) {
+      this._pendingAudioElements.clear();
+    }
+
     this.connections.forEach(c => c.close());
     this.mediaCalls.forEach(c => c.close());
     this.connections.clear();
