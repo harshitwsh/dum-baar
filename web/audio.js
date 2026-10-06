@@ -214,19 +214,37 @@ class HookahAudio {
       window.speechSynthesis.cancel();
       window.speechSynthesis.resume();
 
-      const utt = new SpeechSynthesisUtterance(phrase);
-      utt.rate = 1.02;
-      utt.pitch = 1.06;
+      // Clean phrase: remove emojis and all punctuation so it NEVER speaks "exclamation mark"
+      const cleanPhrase = String(phrase)
+        .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/gu, '')
+        .replace(/[!?,.:;()\-—_"'`~]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+      if (!cleanPhrase) return;
+
+      const utt = new SpeechSynthesisUtterance(cleanPhrase);
+      utt.rate = 1.0;
+      utt.pitch = 1.05;
       utt.volume = 1.0;
 
       const voices = window.speechSynthesis.getVoices() || [];
-      const indianVoice = voices.find(v => /hi[-_]IN/i.test(v.lang) || /en[-_]IN/i.test(v.lang) || /India/i.test(v.name));
+      const indianVoice = voices.find(v => 
+        /hi[-_]IN/i.test(v.lang) || 
+        /en[-_]IN/i.test(v.lang) || 
+        /Rishi/i.test(v.name) || 
+        /Lekha/i.test(v.name) || 
+        /Veena/i.test(v.name) ||
+        /Indian/i.test(v.name)
+      );
+
       if (indianVoice) {
         utt.voice = indianVoice;
         utt.lang = indianVoice.lang;
       } else {
-        utt.lang = 'hi-IN';
+        utt.lang = 'en-IN';
       }
+
       window.speechSynthesis.speak(utt);
     } catch (e) {
       console.warn("speechSynthesis error:", e);
@@ -260,7 +278,7 @@ class HookahAudio {
     const lower = String(type).toLowerCase();
 
     if (lower.includes('pass')) {
-      this.speakReactionPhrase("भाई पास कर!");
+      this.speakReactionPhrase("Bhai pass kar");
       // Ascending call horn / chime
       const notes = [440, 554.37, 659.25];
       notes.forEach((freq, idx) => {
@@ -279,6 +297,7 @@ class HookahAudio {
       });
 
     } else if (lower.includes('dum') || lower.includes('flame')) {
+      this.speakReactionPhrase("Kya dum maara");
       // Warm resonant power chord & triumphant swoosh: "Kya dum maara!"
       const freqs = [220, 330, 440];
       freqs.forEach((freq, i) => {
@@ -303,6 +322,7 @@ class HookahAudio {
       });
 
     } else if (lower.includes('ring') || lower.includes('chhalla')) {
+      this.speakReactionPhrase("Chhalla bana");
       // Crystalline bell chime
       this.playRingChime();
       const osc = this.ctx.createOscillator();
@@ -319,6 +339,7 @@ class HookahAudio {
       osc.stop(now + 0.5);
 
     } else if (lower.includes('wah') || lower.includes('clap')) {
+      this.speakReactionPhrase("Wah wah");
       // Double acoustic clap / table tap
       for (let i = 0; i < 2; i++) {
         const t = now + i * 0.13;
@@ -336,6 +357,7 @@ class HookahAudio {
       }
 
     } else if (lower.includes('cheer')) {
+      this.speakReactionPhrase("Cheers");
       // Crystal toast glass clink: C7 (2093Hz) + high shimmer
       const osc1 = this.ctx.createOscillator();
       const osc2 = this.ctx.createOscillator();
