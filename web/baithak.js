@@ -282,8 +282,10 @@ class BaithakManager {
 
     // Reactions with procedural audio shouts
     document.querySelectorAll('.react-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const text = btn.dataset.reaction;
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        const text = btn.dataset.reaction || btn.textContent.trim();
         this.sendReaction(text);
       });
     });
@@ -692,7 +694,10 @@ class BaithakManager {
   }
 
   sendReaction(text) {
-    try { window.hookahAudio?.playReactionSound(text); } catch (_) {}
+    if (window.hookahAudio) {
+      window.hookahAudio.init();
+      window.hookahAudio.playReactionSound(text);
+    }
     this._showFloatingReaction(text, this.myName);
     if (this.isInRoom) {
       this._broadcast({

@@ -208,96 +208,141 @@ class HookahAudio {
     osc.stop(now + 0.45);
   }
 
-  // Play reaction sound bites
-  playReactionSound(type = 'default') {
-    if (!this.ctx || this.isMuted) return;
-    if (this.ctx.state === 'suspended') this.ctx.resume().catch(() => {});
-    const now = this.ctx.currentTime;
+  // Play reaction sound bites (async to guarantee AudioContext is running)
+  async playReactionSound(type = 'default') {
+    if (!this.ctx) {
+      this.init();
+    }
+    if (!this.ctx) return;
 
+    if (this.ctx.state === 'suspended') {
+      try {
+        await this.ctx.resume();
+      } catch (err) {
+        console.warn("AudioContext resume failed:", err);
+      }
+    }
+
+    if (this.isMuted) {
+      this.isMuted = false;
+      if (this.masterGain) {
+        this.masterGain.gain.setValueAtTime(this.volume, this.ctx.currentTime);
+      }
+    }
+
+    const now = this.ctx.currentTime;
+    const dest = this.ctx.destination;
     const lower = String(type).toLowerCase();
 
     if (lower.includes('pass')) {
-      // Ascending two-tone melodic chime: "Bhai pass kar!"
-      const osc1 = this.ctx.createOscillator();
-      const osc2 = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc1.type = 'sine';
-      osc2.type = 'triangle';
-      osc1.frequency.setValueAtTime(392, now); // G4
-      osc1.frequency.exponentialRampToValueAtTime(587.33, now + 0.15); // D5
-      osc2.frequency.setValueAtTime(493.88, now + 0.1); // B4
-      gain.gain.setValueAtTime(0.01, now);
-      gain.gain.linearRampToValueAtTime(0.4, now + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
-      osc1.connect(gain);
-      osc2.connect(gain);
-      gain.connect(this.masterGain);
-      osc1.start(now); osc2.start(now);
-      osc1.stop(now + 0.45); osc2.stop(now + 0.45);
+      // Ascending cheerful 3-note melodic arpeggio: G4 -> C5 -> E5 ("Bhai pass kar!")
+      const notes = [392.00, 523.25, 659.25];
+      notes.forEach((freq, idx) => {
+        const t = now + idx * 0.11;
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, t);
+        g.gain.setValueAtTime(0.01, t);
+        g.gain.linearRampToValueAtTime(0.55, t + 0.02);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+        osc.connect(g);
+        g.connect(dest);
+        osc.start(t);
+        osc.stop(t + 0.35);
+      });
 
     } else if (lower.includes('dum') || lower.includes('flame')) {
-      // Warm power chord & ember swoosh: "Kya dum maara!"
+      // Warm resonant power chord & triumphant swoosh: "Kya dum maara!"
+      const freqs = [220, 330, 440];
+      freqs.forEach((freq, i) => {
+        const osc = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        osc.type = i === 0 ? 'sawtooth' : 'triangle';
+        osc.frequency.setValueAtTime(freq, now);
+        osc.frequency.exponentialRampToValueAtTime(freq * 1.5, now + 0.25);
+        g.gain.setValueAtTime(0.01, now);
+        g.gain.linearRampToValueAtTime(0.5 / (i + 1), now + 0.03);
+        g.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
+
+        const filter = this.ctx.createBiquadFilter();
+        filter.type = 'lowpass';
+        filter.frequency.setValueAtTime(1400, now);
+
+        osc.connect(filter);
+        filter.connect(g);
+        g.connect(dest);
+        osc.start(now);
+        osc.stop(now + 0.55);
+      });
+
+    } else if (lower.includes('ring') || lower.includes('chhalla')) {
+      // Crystalline bell chime
+      this.playRingChime();
       const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'triangle';
-      osc.frequency.setValueAtTime(220, now);
-      osc.frequency.exponentialRampToValueAtTime(440, now + 0.22);
-      gain.gain.setValueAtTime(0.01, now);
-      gain.gain.linearRampToValueAtTime(0.5, now + 0.03);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
-      osc.connect(gain);
-      gain.connect(this.masterGain);
+      const g = this.ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(1320, now + 0.18);
+      g.gain.setValueAtTime(0.01, now);
+      g.gain.linearRampToValueAtTime(0.6, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+      osc.connect(g);
+      g.connect(dest);
       osc.start(now);
       osc.stop(now + 0.5);
 
-    } else if (lower.includes('ring') || lower.includes('chhalla')) {
-      this.playRingChime();
-
     } else if (lower.includes('wah') || lower.includes('clap')) {
-      // Double rhythmic percussive hand clap / acoustic tap
+      // Double acoustic clap / table tap
       for (let i = 0; i < 2; i++) {
-        const t = now + i * 0.12;
+        const t = now + i * 0.13;
         const osc = this.ctx.createOscillator();
         const g = this.ctx.createGain();
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(320, t);
-        osc.frequency.exponentialRampToValueAtTime(140, t + 0.08);
-        g.gain.setValueAtTime(0.45, t);
-        g.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(360, t);
+        osc.frequency.exponentialRampToValueAtTime(120, t + 0.07);
+        g.gain.setValueAtTime(0.65, t);
+        g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
         osc.connect(g);
-        g.connect(this.masterGain);
+        g.connect(dest);
         osc.start(t);
-        osc.stop(t + 0.09);
+        osc.stop(t + 0.08);
       }
 
     } else if (lower.includes('cheer')) {
-      // Crystal glass toast "clink"
-      const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(1760, now); // A6 high crystal chime
-      gain.gain.setValueAtTime(0.01, now);
-      gain.gain.linearRampToValueAtTime(0.55, now + 0.01);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
-      osc.connect(gain);
-      gain.connect(this.masterGain);
-      osc.start(now);
-      osc.stop(now + 0.7);
+      // Crystal toast glass clink: C7 (2093Hz) + high shimmer
+      const osc1 = this.ctx.createOscillator();
+      const osc2 = this.ctx.createOscillator();
+      const g = this.ctx.createGain();
+      osc1.type = 'sine';
+      osc2.type = 'sine';
+      osc1.frequency.setValueAtTime(2093, now);
+      osc2.frequency.setValueAtTime(3135, now);
+      g.gain.setValueAtTime(0.01, now);
+      g.gain.linearRampToValueAtTime(0.65, now + 0.008);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.75);
+      osc1.connect(g);
+      osc2.connect(g);
+      g.connect(dest);
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.75);
+      osc2.stop(now + 0.75);
 
     } else {
-      // Default pleasant bubble notification
+      // Default notification chime
       const osc = this.ctx.createOscillator();
-      const gain = this.ctx.createGain();
+      const g = this.ctx.createGain();
       osc.type = 'sine';
       osc.frequency.setValueAtTime(523.25, now);
-      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.12);
-      gain.gain.setValueAtTime(0.01, now);
-      gain.gain.linearRampToValueAtTime(0.35, now + 0.02);
-      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
-      osc.connect(gain);
-      gain.connect(this.masterGain);
+      osc.frequency.exponentialRampToValueAtTime(783.99, now + 0.14);
+      g.gain.setValueAtTime(0.01, now);
+      g.gain.linearRampToValueAtTime(0.5, now + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+      osc.connect(g);
+      g.connect(dest);
       osc.start(now);
-      osc.stop(now + 0.35);
+      osc.stop(now + 0.4);
     }
   }
 }
@@ -305,8 +350,14 @@ class HookahAudio {
 window.hookahAudio = new HookahAudio();
 
 const activateAudio = () => {
-  window.hookahAudio.init();
+  if (window.hookahAudio) {
+    window.hookahAudio.init();
+    if (window.hookahAudio.ctx && window.hookahAudio.ctx.state === 'suspended') {
+      window.hookahAudio.ctx.resume().catch(() => {});
+    }
+  }
 };
-document.addEventListener('pointerdown', activateAudio, { once: true });
-document.addEventListener('keydown', activateAudio, { once: true });
-document.addEventListener('touchstart', activateAudio, { once: true });
+document.addEventListener('pointerdown', activateAudio);
+document.addEventListener('click', activateAudio);
+document.addEventListener('touchstart', activateAudio);
+document.addEventListener('keydown', activateAudio);
