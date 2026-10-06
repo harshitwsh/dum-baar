@@ -42,7 +42,17 @@ Includes all world-renowned flavours from **Al Fakher, Starbuzz, Adalya, Tangier
 
 ---
 
-### 3. 🎮 Dual Control Modes
+### 3. 👥 Online Multiplayer Baithak (Hookah Circle with Video Call)
+Sit together with friends in a real-time virtual hookah lounge:
+* **WebRTC Live Video & Audio**: Live peer-to-peer webcam & microphone communication directly in the browser (powered by PeerJS with zero account setup).
+* **Pass The Pipe Ritual**: True social hookah etiquette — one friend holds the pipe at a time. Click **"Pass Pipe ➡️"** to pass to any friend in the circle, or **"Request Next 🙋‍♂️"** to ask for your turn.
+* **Synchronized Physics & Audio**: When the pipe holder inhales, bubbling water sounds and glowing coals synchronize live on all friends' screens. When they exhale, smoke billows across the shared lounge.
+* **Instant Invite Links**: Generate private rooms (`?room=ROYAL-492`) and invite up to 6 friends with one click.
+* **Social Lounge Reactions**: Tap quick shoutouts that float on screen (🗣️ *"Bhai Pass Kar!"*, 🔥 *"Kya Dum Maara!"*, 💨 *"Chhalla Bana!"*, 👏 *"Wah!"*, 🍹 *"Cheers!"*).
+
+---
+
+### 4. 🎮 Dual Control Modes
 
 #### Mode A: Camera AI (Hands & Face Tracking)
 * Powered by Google MediaPipe Tasks Vision.

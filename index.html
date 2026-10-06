@@ -119,6 +119,7 @@
     </div>
     <button id="start" class="btn btn-cta" type="button">Turn on my camera</button>
     <button id="start-interactive" class="btn btn-subtle" type="button">Drag with Mouse & Touch</button>
+    <button id="start-baithak" class="btn btn-subtle" type="button" style="margin-top:8px;border-color:rgba(217,107,39,0.6);font-weight:600;">👥 Join or Start Baithak (Call Friends)</button>
     <p class="fine" id="intro-note">Your camera stays entirely on your device. Zero frames are ever recorded or transmitted.</p>
   </div>
 </section>
@@ -219,6 +220,13 @@
 
 <noscript><p class="noscript">This virtual lounge experience requires JavaScript and modern browser canvas support.</p></noscript>
 <script src="./web/audio.js"></script>
+<script src="./web/peerjs.min.js"></script>
+<script src="./web/baithak.js"></script>
 <script type="module" src="./dist/app.min.js"></script>
+<script>
+  document.getElementById('start-baithak')?.addEventListener('click', () => {
+    window.hookahBaithak?.openModal();
+  });
+</script>
 </body>
 </html>
